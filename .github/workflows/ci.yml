@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tool env
+        run: make env
+
+      - name: Lint
+        run: make lint
+
+      - name: Check (seeded)
+        run: make check SEED=${{ github.run_id }}
+
+      - name: Synthesis
+        run: make synth
+
+      - name: Formal (prove)
+        run: make formal_all
+
+      - name: Dashboards & Badge
+        run: |
+          make dashboards
+          make badge
+
+      - name: JUnit + Artifacts
+        run: make junit
+
+      - name: Upload Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports/
+
+      - name: Publish site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: reports/site

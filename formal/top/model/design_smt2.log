@@ -1,0 +1,56 @@
+
+ /----------------------------------------------------------------------------\
+ |  yosys -- Yosys Open SYnthesis Suite                                       |
+ |  Copyright (C) 2012 - 2025  Claire Xenia Wolf <claire@yosyshq.com>         |
+ |  Distributed under an ISC-like license, type "license" to see terms        |
+ \----------------------------------------------------------------------------/
+ Yosys 0.57+218 (git sha1 7ebd97216, clang++ 18.1.8 -fPIC -O3)
+
+-- Executing script file `design_smt2.ys' --
+
+1. Executing RTLIL frontend.
+Input filename: design_prep.il
+
+2. Executing HIERARCHY pass (managing design hierarchy).
+Attribute `top' found on module `top'. Setting top module to top.
+
+2.1. Analyzing design hierarchy..
+Top module:  \top
+
+2.2. Analyzing design hierarchy..
+Top module:  \top
+Removed 0 unused modules.
+
+3. Executing FORMALFF pass.
+
+4. Executing DFFUNMAP pass (unmap clock enable and synchronous reset from FFs).
+
+5. Printing statistics.
+
+=== top ===
+
+        +----------Local Count, excluding submodules.
+        | 
+        9 wires
+       51 wire bits
+        7 public wires
+       42 public wire bits
+        5 ports
+       26 port bits
+        5 cells
+        1   $add
+        1   $anyinit
+        1   $assume
+        1   $mux
+        1   $not
+
+6. Executing SMT2 backend.
+
+6.1. Executing BMUXMAP pass.
+
+6.2. Executing DEMUXMAP pass.
+Creating SMT-LIBv2 representation of module top.
+
+End of script. Logfile hash: b15fb20b8b, CPU: user 0.00s system 0.01s, MEM: 14.88 MB peak
+Yosys 0.57+218 (git sha1 7ebd97216, clang++ 18.1.8 -fPIC -O3)
+Time spent: 69% 2x write_smt2 (0 sec), 9% 2x read_rtlil (0 sec), ...

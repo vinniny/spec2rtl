@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec "$HOME/synlig-local/bin/yosys" -m "$HOME/synlig-local/share/yosys/plugins/systemverilog.so" "$@"

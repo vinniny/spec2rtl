@@ -1,0 +1,2 @@
+SBY 20:55:32 [formal/top_reset_temporal] Removing directory '/home/vinniny/projects/spec2rtl/formal/top_reset_temporal'.
+SBY 20:55:32 [formal/top_reset_temporal] ERROR: sby file syntax error: unexpected section 'reset_temporal', expected one of 'options, engines, script, autotune, file, files'

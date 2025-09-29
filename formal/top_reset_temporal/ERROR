@@ -1,0 +1,1 @@
+ERROR: sby file syntax error: unexpected section 'reset_temporal', expected one of 'options, engines, script, autotune, file, files'

@@ -1,0 +1,8 @@
+# running in formal/top/src/
+read -formal -sv -I ../../.. -I ../../../verification top.sv props.sv bind_top.sv
+prep -top top
+
+hierarchy -smtcheck
+rename -witness
+write_jny -no-connections ../model/design.json
+write_rtlil ../model/design.il

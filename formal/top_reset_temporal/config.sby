@@ -1,0 +1,31 @@
+[reset_temporal options]
+mode prove
+depth 32
+
+[reset_temporal engines]
+smtbmc
+
+[reset_temporal script]
+read -formal -sv top.sv props.sv
+prep -top top
+
+[reset_temporal files]
+rtl/top.sv
+formal/props.sv
+
+[onehot_gray options]
+mode prove
+depth 32
+
+[onehot_gray engines]
+smtbmc
+
+[onehot_gray script]
+read -formal -sv top.sv props.sv
+chparam -set ENABLE_ONEHOT 1 props
+chparam -set ENABLE_GRAY 1 props
+prep -top top
+
+[onehot_gray files]
+rtl/top.sv
+formal/props.sv

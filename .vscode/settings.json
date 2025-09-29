@@ -1,0 +1,6 @@
+{
+  "files.associations": { "*.sv": "systemverilog" },
+  "editor.tabSize": 2,
+  "editor.rulers": [100],
+  "editor.formatOnSave": false
+}

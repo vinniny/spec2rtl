@@ -1,0 +1,15 @@
+[options]
+mode prove
+depth 32
+
+[engines]
+smtbmc
+
+[script]
+read -formal -sv -I ../../.. -I ../../../verification top.sv props.sv bind_top.sv
+prep -top top
+
+[files]
+rtl/top.sv
+formal/props.sv
+formal/bind_top.sv

@@ -1,0 +1,70 @@
+version: 1
+dut: top
+requirements:
+- text: shall register the sum of `a + b` into `y` on each rising edge of `clk`.
+  tags:
+  - arithmetic
+  - functional
+  acceptance:
+    check: y equals a + b (modulo width)
+  cov_targets:
+    line: 0.85
+    toggle: 0.7
+  stimuli:
+    directed:
+    - a: 0
+      b: 0
+    - a: 255
+      b: 1
+    - a: 170
+      b: 85
+    random:
+      count: 64
+      constraints:
+        a:
+        - 0
+        - 255
+        b:
+        - 0
+        - 255
+  id: R1
+- text: shall drive `y` to zero when `rst_n` is asserted low.
+  tags:
+  - reset
+  acceptance:
+    check: y == 0 during and immediately after synchronous active-low reset
+  cov_targets:
+    line: 0.05
+    toggle: 0.0
+  stimuli:
+    directed:
+    - sequence: rst_n low for 2 cycles, release, observe y
+  id: R2
+- text: must treat additions modulo 256 (wrap on overflow).
+  tags:
+  - arithmetic
+  - functional
+  - overflow
+  acceptance:
+    check: y equals a + b (modulo width)
+  cov_targets:
+    line: 0.85
+    toggle: 0.7
+  stimuli:
+    directed:
+    - a: 0
+      b: 0
+    - a: 255
+      b: 1
+    - a: 170
+      b: 85
+    random:
+      count: 64
+      constraints:
+        a:
+        - 0
+        - 255
+        b:
+        - 0
+        - 255
+  id: R3

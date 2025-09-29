@@ -1,0 +1,6 @@
+build/
+obj_dir/
+*.vcd
+synth/out.json
+synth/yosys.log
+reports/
