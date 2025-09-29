@@ -13,6 +13,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator symbiyosys python3-venv python3-pip
+
+      - name: Install OSS CAD Suite
+        run: |
+          curl -L https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2024-12-05/oss-cad-suite-linux-x64-20241205.tgz -o oss-cad-suite.tgz
+          tar -xzf oss-cad-suite.tgz
+          echo "OSS_CAD_SUITE=${GITHUB_WORKSPACE}/oss-cad-suite" >> $GITHUB_ENV
+          echo "YOSYS_SV_BIN=${GITHUB_WORKSPACE}/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
+          echo "${GITHUB_WORKSPACE}/oss-cad-suite/bin" >> $GITHUB_PATH
+
       - name: Tool env
         run: make env
 
