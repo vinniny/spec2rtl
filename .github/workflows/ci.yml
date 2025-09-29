@@ -14,16 +14,35 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install EDA toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip
+          type gh >/dev/null 2>&1 || sudo apt-get install -y gh
 
-          curl -L \
-            https://github.com/YosysHQ/oss-cad-suite-build/releases/latest/download/oss-cad-suite-linux-x64.tar.xz \
-            -o /tmp/oss-cad-suite.tar.xz
+          ASSET=$(gh release view -R YosysHQ/oss-cad-suite-build --json assets \
+            | jq -r '.assets[].name' \
+            | grep -E '^oss-cad-suite-linux-x64.*\.(tar\.xz|tgz)$' \
+            | head -n1)
+
+          test -n "$ASSET" || { echo "No oss-cad-suite linux-x64 asset found"; exit 1; }
+
+          gh release download -R YosysHQ/oss-cad-suite-build "$ASSET" -O "/tmp/$ASSET"
+
+          MIN_BYTES=5000000
+          ACT_BYTES=$(stat -c%s "/tmp/$ASSET" || echo 0)
+          if [ "$ACT_BYTES" -lt "$MIN_BYTES" ]; then
+            echo "Download looks too small ($ACT_BYTES bytes) — aborting."; exit 2
+          fi
+
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          tar -xJf /tmp/oss-cad-suite.tar.xz -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+          case "$ASSET" in
+            *.tar.xz) tar -xJf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
+            *.tgz)    tar -xzf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
+            *) echo "Unknown archive type: $ASSET"; exit 3 ;;
+          esac
 
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           echo "OSS_CAD_SUITE=$GITHUB_WORKSPACE/oss-cad-suite" >> $GITHUB_ENV
