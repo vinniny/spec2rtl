@@ -19,22 +19,24 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y verilator jq python3-venv python3-pip
-          type gh >/dev/null 2>&1 || sudo apt-get install -y gh
+          sudo apt-get install -y verilator jq python3-venv python3-pip gh
 
-          ASSET=$(gh release view -R YosysHQ/oss-cad-suite-build --json assets \
-            | jq -r '.assets[].name' \
+          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
+          TAG=$(printf "%s\n" "$INFO" | jq -r '.tagName')
+          ASSET=$(printf "%s\n" "$INFO" | jq -r '.assets[].name' \
             | grep -E '^oss-cad-suite-linux-x64.*\.(tar\.xz|tgz)$' \
             | head -n1)
 
-          test -n "$ASSET" || { echo "No oss-cad-suite linux-x64 asset found"; exit 1; }
+          test -n "$TAG"   || { echo "No release tag found"; exit 1; }
+          test -n "$ASSET" || { echo "No linux-x64 asset found"; exit 1; }
 
-          gh release download -R YosysHQ/oss-cad-suite-build "$ASSET" -O "/tmp/$ASSET"
+          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" \
+            -O "/tmp/$ASSET"
 
           MIN_BYTES=5000000
           ACT_BYTES=$(stat -c%s "/tmp/$ASSET" || echo 0)
           if [ "$ACT_BYTES" -lt "$MIN_BYTES" ]; then
-            echo "Download looks too small ($ACT_BYTES bytes) — aborting."; exit 2
+            echo "Downloaded asset too small ($ACT_BYTES bytes)"; exit 2
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
@@ -47,7 +49,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           echo "OSS_CAD_SUITE=$GITHUB_WORKSPACE/oss-cad-suite" >> $GITHUB_ENV
           echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
-          echo "SBY_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/sby" >> $GITHUB_ENV
+          echo "SBY_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/sby"       >> $GITHUB_ENV
 
       - name: Smoke-check tools
         run: |
