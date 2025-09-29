@@ -25,6 +25,8 @@ TOP_TB ?= top_tb
 SIM_ARGS := +seed=$(SEED)
 SIM_BIN := build/sim/obj_dir/V$(TOP_TB)
 
+SBY ?= $(if $(SBY_BIN),$(SBY_BIN),sby)
+
 RTL ?= $(wildcard rtl/*.sv)
 TB_ALL := $(wildcard tb/*.sv)
 TB := $(filter-out tb/top_asserts.sv,$(TB_ALL))
@@ -158,11 +160,11 @@ flaky_check:
 	fi
 
 formal: | $(REPORTS)
-	@sby -f formal/top.sby | tee reports/formal.log
+	@$(SBY) -f formal/top.sby | tee reports/formal.log
 	@grep -q "DONE (PASS" reports/formal.log || (echo "Formal failed"; exit 1)
 
 formal_all: formal
-	@[ -f formal/top_protocol.sby ] && sby -f formal/top_protocol.sby | tee -a reports/formal.log || true
+	@[ -f formal/top_protocol.sby ] && $(SBY) -f formal/top_protocol.sby | tee -a reports/formal.log || true
 
 dashboards: | $(REPORTS)
 	@python3 $(SCRIPTS_DIR)/report_dashboard.py

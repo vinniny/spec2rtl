@@ -13,18 +13,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install EDA toolchain
         run: |
+          set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y verilator symbiyosys python3-venv python3-pip
+          sudo apt-get install -y verilator jq python3-venv python3-pip
 
-      - name: Install OSS CAD Suite
+          curl -L \
+            https://github.com/YosysHQ/oss-cad-suite-build/releases/latest/download/oss-cad-suite-linux-x64.tar.xz \
+            -o /tmp/oss-cad-suite.tar.xz
+          mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
+          tar -xJf /tmp/oss-cad-suite.tar.xz -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+
+          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
+          echo "OSS_CAD_SUITE=$GITHUB_WORKSPACE/oss-cad-suite" >> $GITHUB_ENV
+          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
+          echo "SBY_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/sby" >> $GITHUB_ENV
+
+      - name: Smoke-check tools
         run: |
-          curl -L https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2024-12-05/oss-cad-suite-linux-x64-20241205.tgz -o oss-cad-suite.tgz
-          tar -xzf oss-cad-suite.tgz
-          echo "OSS_CAD_SUITE=${GITHUB_WORKSPACE}/oss-cad-suite" >> $GITHUB_ENV
-          echo "YOSYS_SV_BIN=${GITHUB_WORKSPACE}/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
-          echo "${GITHUB_WORKSPACE}/oss-cad-suite/bin" >> $GITHUB_PATH
+          set -euxo pipefail
+          verilator --version
+          "$YOSYS_SV_BIN" -V | head -n1
+          "$SBY_BIN" --help | head -n1
 
       - name: Tool env
         run: make env
