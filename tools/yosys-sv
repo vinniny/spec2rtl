@@ -1,2 +1,80 @@
 #!/usr/bin/env bash
-exec "$HOME/synlig-local/bin/yosys" -m "$HOME/synlig-local/share/yosys/plugins/systemverilog.so" "$@"
+set -euo pipefail
+
+log() {
+  if [[ -n "${YOSYS_SV_DEBUG:-}" ]]; then
+    echo "[yosys-sv] $*" >&2
+  fi
+}
+
+fail() {
+  echo "[yosys-sv] ERROR: $*" >&2
+  exit 127
+}
+
+choose_bin() {
+  if [[ -n "${YOSYS_SV_BIN:-}" ]]; then
+    echo "$YOSYS_SV_BIN"
+    return 0
+  fi
+
+  if [[ -n "${OSS_CAD_SUITE:-}" && -x "${OSS_CAD_SUITE}/bin/yosys" ]]; then
+    echo "${OSS_CAD_SUITE}/bin/yosys"
+    return 0
+  fi
+
+  if command -v yosys-uhdm >/dev/null 2>&1; then
+    command -v yosys-uhdm
+    return 0
+  fi
+
+  if command -v yosys >/dev/null 2>&1; then
+    command -v yosys
+    return 0
+  fi
+
+  return 1
+}
+
+# Determine yosys binary
+if ! YOSYS_BIN=$(choose_bin); then
+  fail "unable to locate yosys binary; set YOSYS_SV_BIN or OSS_CAD_SUITE"
+fi
+
+log "using yosys binary: $YOSYS_BIN"
+
+# Build candidate plugin list
+plugins=()
+if [[ -n "${YOSYS_SV_PLUGIN:-}" ]]; then
+  plugins+=("$YOSYS_SV_PLUGIN")
+else
+  if [[ -n "${OSS_CAD_SUITE:-}" ]]; then
+    plugins+=("${OSS_CAD_SUITE}/share/yosys/plugins/systemverilog.so")
+    plugins+=("${OSS_CAD_SUITE}/share/yosys/plugins/uhdm.so")
+  fi
+  plugins+=("$HOME/synlig-local/share/yosys/plugins/systemverilog.so")
+  plugins+=("systemverilog" "uhdm")
+fi
+
+try_exec_with_plugin() {
+  local plugin="$1"
+  shift
+  if [[ "$plugin" == *.so ]]; then
+    [[ -f "$plugin" ]] || return 1
+  fi
+
+  if "$YOSYS_BIN" -Q -p "exit" -m "$plugin" >/dev/null 2>&1; then
+    log "loading plugin via -m $plugin"
+    exec "$YOSYS_BIN" -m "$plugin" "$@"
+  fi
+  return 1
+}
+
+for plugin in "${plugins[@]}"; do
+  if try_exec_with_plugin "$plugin" "$@"; then
+    exit 0
+  fi
+done
+
+echo "[yosys-sv] WARNING: SystemVerilog plugin not detected; continuing with plain yosys" >&2
+exec "$YOSYS_BIN" "$@"

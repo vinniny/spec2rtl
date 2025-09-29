@@ -178,7 +178,7 @@ mutate: | $(REPORTS)
 	@rm -f rtl/top_mut.sv
 	@$(MAKE) report
 
-env:
+env: | $(REPORTS)
 	@python3 $(SCRIPTS_DIR)/env_report.py | tee reports/env.json
 
 junit: report
