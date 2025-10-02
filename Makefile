@@ -25,6 +25,10 @@ TOP_TB ?= top_tb
 SIM_ARGS := +seed=$(SEED)
 SIM_BIN := build/sim/obj_dir/V$(TOP_TB)
 
+AI_BIN ?= tools/ai/claude_run.sh
+AI_VERIFY_INPUTS := reports/sim_report.json reports/coverage_per_req.json
+AI_SYNTH_INPUTS := reports/synth_report.json
+
 SBY ?= $(if $(SBY_BIN),$(SBY_BIN),sby)
 
 RTL ?= $(wildcard rtl/*.sv)
@@ -36,7 +40,7 @@ SIM_SOURCES = $(SV_SOURCES)
 SV_FORMAT_SOURCES = $(RTL) $(TB_ALL) $(VERIF_SV)
 
 .PHONY: all check format lint lint-verilator lint-verible sim run test judge report cov cov_summarize trace trace_md synth formal formal_all dashboards badge mutate env junit clean hooks flaky_check patch \
-	pre-commit spec2rtl spec2sva spec2tests generate dev
+	pre-commit spec2rtl spec2sva spec2tests generate dev ai-verify ai-synth
 all: lint check synth formal_all dashboards badge
 
 format:
@@ -188,3 +192,9 @@ junit: report
 
 patch: judge
 	@python3 $(SCRIPTS_DIR)/draft_patch.py
+
+ai-verify: $(AI_VERIFY_INPUTS) memory/CLAUDE.verify.md
+	@$(AI_BIN) verify $(AI_VERIFY_INPUTS) || true
+
+ai-synth: $(AI_SYNTH_INPUTS) memory/CLAUDE.synth.md
+	@$(AI_BIN) synth $(AI_SYNTH_INPUTS) || true

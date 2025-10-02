@@ -190,6 +190,6 @@ Removed 0 unused modules.
 7. Executing RTLIL backend.
 Output filename: ../model/design.il
 
-End of script. Logfile hash: e8f8fec17b, CPU: user 0.01s system 0.00s, MEM: 14.87 MB peak
+End of script. Logfile hash: e8f8fec17b, CPU: user 0.01s system 0.00s, MEM: 14.64 MB peak
 Yosys 0.57+218 (git sha1 7ebd97216, clang++ 18.1.8 -fPIC -O3)
-Time spent: 29% 5x opt_expr (0 sec), 21% 4x opt_clean (0 sec), ...
+Time spent: 31% 5x opt_expr (0 sec), 20% 4x opt_clean (0 sec), ...

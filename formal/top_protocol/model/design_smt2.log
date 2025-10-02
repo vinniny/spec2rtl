@@ -51,6 +51,6 @@ Removed 0 unused modules.
 6.2. Executing DEMUXMAP pass.
 Creating SMT-LIBv2 representation of module top.
 
-End of script. Logfile hash: b15fb20b8b, CPU: user 0.01s system 0.00s, MEM: 14.89 MB peak
+End of script. Logfile hash: b15fb20b8b, CPU: user 0.01s system 0.00s, MEM: 14.67 MB peak
 Yosys 0.57+218 (git sha1 7ebd97216, clang++ 18.1.8 -fPIC -O3)
 Time spent: 62% 2x write_smt2 (0 sec), 16% 2x read_rtlil (0 sec), ...

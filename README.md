@@ -15,11 +15,12 @@ Spec2Tests → Tests & SVAs → Simulation + Coverage → Judge → Synthesis �
 - `rtl/` – synthesizable RTL designs (designs under test).
 - `tb/` – requirement-aware testbenches with coverage bins and requirement IDs.
 - `verification/` – generated `reqs.yml`, `test_plan.md`, `svas.sv`, plus reusable assertion macros under `verification/lib/`.
+- `memory/` – Claude memory capsules (`CLAUDE.md`, `CLAUDE.verify.md`, `CLAUDE.synth.md`) that document house rules for AI agents.
 - `formal/` – formal properties, bind wrappers, and SymbiYosys configurations.
 - `synth/` – Yosys UHDM scripts, logs, and synthesis JSON outputs.
 - `scripts/` – automation utilities (`spec2tests.py`, `judge.py`, coverage converters, mutation tools, etc.).
-- `reports/` – generated artifacts (`sim_report.json`, `coverage.json`, dashboards, traces, badges).
-- `tools/` – third-party wrappers and helper binaries (yosys-sv, verible, REST API server).
+- `reports/` – generated artifacts (`sim_report.json`, `coverage.json`, dashboards, traces, badges, `ai/` advice dumps).
+- `tools/` – third-party wrappers and helper binaries (yosys-sv, verible, REST API server) plus `tools/ai/claude_run.sh`.
 - `.github/workflows/` – GitHub Actions pipeline definitions.
 
 ## Environment Setup
@@ -86,24 +87,32 @@ Requirements are written in Markdown using “shall/must” language. Each bulle
 - Runs Yosys (UHDM front-end) to produce JSON netlists and logs.
 - Fails if latches are inferred; details appear in `reports/synth_report.json`.
 
-### 7. Formal proof
+### 7. Claude-guided advice (optional but automated in CI)
+`make ai-verify`
+- Assembles a prompt from `memory/CLAUDE*.md`, `tools/ai/templates/verify_task.md.tmpl`, and the latest simulation artifacts to draft targeted verification diffs.
+- Results are written to `reports/ai/verify.md` (markdown) and `reports/ai/verify.json` (raw API response).
+
+`make ai-synth`
+- Mirrors the same flow for synthesis, using `reports/synth_report.json` and stage-specific memory to produce `reports/ai/synth.md`.
+
+### 8. Formal proof
 `make formal_all`
 - Executes SymbiYosys on `formal/top.sby` (reset/temporal properties) and `formal/top_protocol.sby` (optional one-hot / gray-code checks).
 - Assertions are bound into the DUT via `formal/bind_*.sv` so RTL wiring stays untouched.
 
-### 8. Mutation testing
+### 9. Mutation testing
 `make mutate`
 - Automatically edits `rtl/top.sv` with typical bug patterns (off-by-one, signedness, dropped reset, etc.).
 - The regression must fail with the mutant to prove tests are sensitive. Survivors cause the Make target to error out.
 
-### 9. Dashboards & badge
+### 10. Dashboards & badge
 `make dashboards` / `make badge`
 - Generates Markdown + HTML dashboards (`reports/dashboard.md`, `reports/dashboard.html`, `reports/site/index.html`).
 - Updates `reports/coverage_badge.svg`, which is referenced at the top of this README.
 
-### 10. CI/CD
-- `.github/workflows/ci.yml` runs the sequence: lint → check (sim + coverage gates) → synth → formal_all → dashboards/badge → junit/artifact upload.
-- Reports are preserved as workflow artifacts so teammates can download results without rerunning locally.
+### 11. CI/CD
+- `.github/workflows/ci.yml` runs the sequence: lint → check (seeded regression) → `ai-verify` → synth → `ai-synth` → formal_all → dashboards/badge → junit/artifact upload.
+- AI advice markdown/JSON is uploaded as `ai-advice` alongside the usual reports to keep automation suggestions auditable.
 
 ## Daily Workflow (Make targets)
 
@@ -120,6 +129,8 @@ Requirements are written in Markdown using “shall/must” language. Each bulle
 | `make mutate` | Before sign-off | Confirms the testbench kills common bug patterns (surviving mutants indicate missing checks). |
 | `make dashboards` | Before sharing results | Updates HTML/Markdown dashboards, including `reports/site/index.html` for GitHub Pages. |
 | `make badge` | After coverage improvements | Refreshes the coverage badge embedded in the README. |
+| `make ai-verify` | After a regression completes | Generates Claude guidance for verification diffs using the latest `sim_report.json` and coverage data. |
+| `make ai-synth` | After synthesis reports are updated | Generates Claude guidance for latch fixes or flow tweaks using `synth_report.json`. |
 
 ## Reports & Artifacts
 - **`reports/sim_report.json`** – simulation schema output with status, requirement sample counts, seed, and signature hash.
@@ -131,10 +142,11 @@ Requirements are written in Markdown using “shall/must” language. Each bulle
 - **`reports/patch.diff`** – draft patch from `scripts/draft_patch.py` based on judge triage.
 - **`reports/coverage_badge.svg`** – auto-generated coverage badge referenced in the README.
 - **`reports/dashboard.md` / `reports/dashboard.html` / `reports/site/index.html`** – dashboard snapshots ready for sharing or GitHub Pages.
+- **`reports/ai/*.md` / `reports/ai/*.json`** – Claude-generated advice and raw responses for verification and synthesis stages.
 - **`reports/junit.xml`** – JUnit-formatted report for CI consumption.
 
 ## CI/CD
-GitHub Actions runs lint → check → synth → formal → dashboards/badge. Reports are uploaded as build artifacts and the coverage badge embedded in this README is refreshed automatically.
+GitHub Actions runs lint → check → `ai-verify` → synth → `ai-synth` → formal → dashboards/badge. Reports and AI advice are uploaded as build artifacts and the coverage badge embedded in this README is refreshed automatically.
 
 ## Contribution Guidelines
 - **Keep spec and artifacts in sync** – run `make spec2tests` whenever you touch `docs/spec.md`; commit the regenerated files under `verification/`.

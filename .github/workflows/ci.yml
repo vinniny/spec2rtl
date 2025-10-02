@@ -67,8 +67,23 @@ jobs:
       - name: Check (seeded)
         run: make check SEED=${{ github.run_id }}
 
+      - name: AI verify advice (Claude)
+        if: ${{ always() }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} # or OPENROUTER_API_KEY
+        run: |
+          make ai-verify || true
+          ls -lh reports/ai || true
+
       - name: Synthesis
         run: make synth
+
+      - name: AI synth advice (Claude)
+        if: ${{ always() }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          make ai-synth || true
 
       - name: Formal (prove)
         run: make formal_all
@@ -80,6 +95,12 @@ jobs:
 
       - name: JUnit + Artifacts
         run: make junit
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: ai-advice
+          path: reports/ai/
 
       - name: Upload Reports
         uses: actions/upload-artifact@v4
