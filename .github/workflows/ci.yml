@@ -27,7 +27,6 @@ jobs:
 
           INFO="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest)"
-
           TAG="$(printf '%s\n' "$INFO" | jq -r '.tag_name // empty')"
           ASSET="$(printf '%s\n' "$INFO" | jq -r '
             .assets[]?.name // empty
@@ -35,15 +34,15 @@ jobs:
             | select(contains("musl") | not)
           ' | head -n1)"
 
-          if [ -z "${ASSET:-}" ]; then
+          if [ -n "$ASSET" ]; then
+            URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
+              .assets[] | select(.name==$A) | .browser_download_url
+            ')"
+          else
             echo "[install-eda] No matching OSS-CAD asset. Available assets were:"
             printf '%s\n' "$INFO" | jq -r '.assets[]?.name // empty'
             exit 1
           fi
-
-          URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
-            .assets[] | select(.name==$A) | .browser_download_url
-          ')"
 
           echo "[install-eda] Using tag: ${TAG:-<unknown>}, asset: $ASSET"
           curl -fL -o "/tmp/$ASSET" "$URL"
@@ -52,15 +51,17 @@ jobs:
           case "$ASSET" in
             *.tar.xz) tar -xJf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
             *.tgz)    tar -xzf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
-            *) echo "[install-eda] Unknown archive type: $ASSET"; exit 1 ;;
+            *) echo "Unknown archive type: $ASSET"; exit 1 ;;
           esac
 
+          export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> "$GITHUB_PATH"
+
           echo "YOSYS_SV_BIN=$(command -v yosys || echo $GITHUB_WORKSPACE/oss-cad-suite/bin/yosys)" >> "$GITHUB_ENV"
           echo "UHDM=0" >> "$GITHUB_ENV"
 
           verilator --version
-          sby --version
+          "$GITHUB_WORKSPACE/oss-cad-suite/bin/sby" --version
           "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" -V | head -n1
       - uses: actions/cache@v4
         with:
@@ -88,7 +89,6 @@ jobs:
 
           INFO="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest)"
-
           TAG="$(printf '%s\n' "$INFO" | jq -r '.tag_name // empty')"
           ASSET="$(printf '%s\n' "$INFO" | jq -r '
             .assets[]?.name // empty
@@ -96,15 +96,15 @@ jobs:
             | select(contains("musl") | not)
           ' | head -n1)"
 
-          if [ -z "${ASSET:-}" ]; then
+          if [ -n "$ASSET" ]; then
+            URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
+              .assets[] | select(.name==$A) | .browser_download_url
+            ')"
+          else
             echo "[install-eda] No matching OSS-CAD asset. Available assets were:"
             printf '%s\n' "$INFO" | jq -r '.assets[]?.name // empty'
             exit 1
           fi
-
-          URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
-            .assets[] | select(.name==$A) | .browser_download_url
-          ')"
 
           echo "[install-eda] Using tag: ${TAG:-<unknown>}, asset: $ASSET"
           curl -fL -o "/tmp/$ASSET" "$URL"
@@ -113,15 +113,17 @@ jobs:
           case "$ASSET" in
             *.tar.xz) tar -xJf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
             *.tgz)    tar -xzf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
-            *) echo "[install-eda] Unknown archive type: $ASSET"; exit 1 ;;
+            *) echo "Unknown archive type: $ASSET"; exit 1 ;;
           esac
 
+          export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> "$GITHUB_PATH"
+
           echo "YOSYS_SV_BIN=$(command -v yosys || echo $GITHUB_WORKSPACE/oss-cad-suite/bin/yosys)" >> "$GITHUB_ENV"
           echo "UHDM=0" >> "$GITHUB_ENV"
 
           verilator --version
-          sby --version
+          "$GITHUB_WORKSPACE/oss-cad-suite/bin/sby" --version
           "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" -V | head -n1
       - uses: actions/cache@v4
         with:
