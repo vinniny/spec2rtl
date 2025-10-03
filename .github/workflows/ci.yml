@@ -24,9 +24,8 @@ jobs:
           trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          git clone --branch main --tags https://github.com/YosysHQ/SymbiYosys.git /tmp/SymbiYosys
-          (cd /tmp/SymbiYosys && make)
-          sudo install /tmp/SymbiYosys/sby /usr/local/bin/
+          pip install git+https://github.com/YosysHQ/SymbiYosys.git
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           INFO="$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets --latest || true)"
           if [ -z "$INFO" ] || [ "$INFO" = "null" ]; then
             INFO="$(curl -fsSL -H \"Authorization: Bearer $GH_TOKEN\" \
@@ -152,9 +151,8 @@ jobs:
           trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          git clone --branch main --tags https://github.com/YosysHQ/SymbiYosys.git /tmp/SymbiYosys
-          (cd /tmp/SymbiYosys && make)
-          sudo install /tmp/SymbiYosys/sby /usr/local/bin/
+          pip install git+https://github.com/YosysHQ/SymbiYosys.git
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           INFO="$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets --latest || true)"
           if [ -z "$INFO" ] || [ "$INFO" = "null" ]; then
             INFO="$(curl -fsSL -H \"Authorization: Bearer $GH_TOKEN\" \
