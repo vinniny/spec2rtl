@@ -1,4 +1,4 @@
-/* verilator lint_off COVERIGN */
+`ifndef VERILATOR
 /* verilator lint_off DECLFILENAME */
 /* verilator lint_off UNDRIVEN */
 covergroup cg_sum @(posedge clk);
@@ -16,4 +16,4 @@ covergroup cg_sum @(posedge clk);
 endgroup
 /* verilator lint_on UNDRIVEN */
 /* verilator lint_on DECLFILENAME */
-/* verilator lint_on COVERIGN */
+`endif

@@ -1,6 +1,8 @@
 `default_nettype none
 `include "verification/svas.sv"
+`ifndef VERILATOR
 `include "cov.svh"
+`endif
 
 module top_tb;
   localparam int W = 8;
@@ -14,7 +16,9 @@ module top_tb;
 
   int seed;
 
+`ifndef VERILATOR
   cg_sum cov = new();
+`endif
 
   top dut (
       .clk  (clk),
@@ -69,7 +73,9 @@ module top_tb;
       end
 
       if (rid == RidFunc) begin
+`ifndef VERILATOR
         cov.sample();
+`endif
         $display("[COVBIN] %s a=%0d b=%0d", rid, ai, bi);
       end
     end
