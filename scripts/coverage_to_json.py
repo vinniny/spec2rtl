@@ -23,6 +23,7 @@ def compute_coverage(info_path: pathlib.Path) -> dict[str, float | int | None]:
 
     line_total = line_hit = 0
     branch_total = branch_hit = 0
+    fallback_branch_total = fallback_branch_hit = 0
 
     for line in text.splitlines():
         if line.startswith("DA:"):
@@ -41,11 +42,25 @@ def compute_coverage(info_path: pathlib.Path) -> dict[str, float | int | None]:
                     branch_total += 1
                     if int(count) > 0:
                         branch_hit += 1
+        elif line.startswith("BRF:"):
+            try:
+                fallback_branch_total += int(line.split(":", 1)[1])
+            except (IndexError, ValueError):
+                continue
+        elif line.startswith("BRH:"):
+            try:
+                fallback_branch_hit += int(line.split(":", 1)[1])
+            except (IndexError, ValueError):
+                continue
+
+    if branch_total == 0 and fallback_branch_total > 0:
+        branch_total = fallback_branch_total
+        branch_hit = min(fallback_branch_hit, branch_total)
 
     return {
         "schema": 1,
-    "line": round(line_hit / line_total, 3) if line_total else None,
-    "toggle": round(branch_hit / branch_total, 3) if branch_total else None,
+        "line": round(line_hit / line_total, 3) if line_total else None,
+        "toggle": round(branch_hit / branch_total, 3) if branch_total else None,
         "line_total": line_total,
         "line_hit": line_hit,
         "branch_total": branch_total,
