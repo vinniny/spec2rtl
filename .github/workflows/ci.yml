@@ -1,5 +1,12 @@
 name: spec2rtl
 
+permissions:
+  contents: read
+
+env:
+  OSS_CAD_SUITE_TAG: 2024-08-26
+  OSS_CAD_SUITE_PLATFORM: linux-x64
+
 on:
   push:
   pull_request:
@@ -27,12 +34,13 @@ jobs:
           python3 -m pip install --upgrade pip
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
-          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
-          TAG=$(printf '%s' "$INFO" | jq -r .tagName)
-          ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E '^oss-cad-suite-linux-x64.*\.(tar\.xz|tgz)$' | head -n1)
-          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
+          OSS_TAG="${OSS_CAD_SUITE_TAG}"
+          OSS_PLATFORM="${OSS_CAD_SUITE_PLATFORM}"
+          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build "$OSS_TAG" --json assets)
+          OSS_ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E "^oss-cad-suite-${OSS_PLATFORM}.*\\.(tar\\.xz|tgz)$" | head -n1)
+          gh release download -R YosysHQ/oss-cad-suite-build "$OSS_TAG" -p "$OSS_ASSET" -O "/tmp/$OSS_ASSET"
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+          tar xf "/tmp/$OSS_ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
           echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
           export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
           set -euo pipefail
@@ -46,7 +54,11 @@ jobs:
           python -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements.lock ]; then
+            pip install -r requirements.lock
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
       - name: Env & spec
         run: |
           . .venv/bin/activate
@@ -90,12 +102,13 @@ jobs:
           python3 -m pip install --upgrade pip
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
-          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
-          TAG=$(printf '%s' "$INFO" | jq -r .tagName)
-          ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E '^oss-cad-suite-linux-x64.*\.(tar\.xz|tgz)$' | head -n1)
-          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
+          OSS_TAG="${OSS_CAD_SUITE_TAG}"
+          OSS_PLATFORM="${OSS_CAD_SUITE_PLATFORM}"
+          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build "$OSS_TAG" --json assets)
+          OSS_ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E "^oss-cad-suite-${OSS_PLATFORM}.*\\.(tar\\.xz|tgz)$" | head -n1)
+          gh release download -R YosysHQ/oss-cad-suite-build "$OSS_TAG" -p "$OSS_ASSET" -O "/tmp/$OSS_ASSET"
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+          tar xf "/tmp/$OSS_ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
           echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
           export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
           set -euo pipefail
@@ -109,7 +122,11 @@ jobs:
           python -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements.lock ]; then
+            pip install -r requirements.lock
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
       - name: UHDM synth + formal + mutate
         env:
           REPORTS_DIR: reports/ci

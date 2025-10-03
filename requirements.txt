@@ -1,2 +1,2 @@
-pyyaml
-pyflakes
+pyyaml~=6.0
+pyflakes~=3.2

@@ -50,6 +50,31 @@ def _format_percent(value: Any) -> str:
         return "n/a"
 
 
+def _fraction(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            return None
+    if isinstance(value, (int, float)):
+        if value > 1:
+            return float(value) / 100.0
+        return float(value)
+    return None
+
+
+def _gate_entry(name: str, status: bool | None, detail: str) -> Dict[str, str]:
+    if status is True:
+        icon = "PASS"
+    elif status is False:
+        icon = "FAIL"
+    else:
+        icon = "INFO"
+    return {"name": name, "icon": icon, "detail": detail, "status": status}
+
+
 def _build_requirement_rows(
     reqs: List[Dict[str, Any]],
     coverage: Dict[str, Any],
@@ -91,6 +116,7 @@ def _write_markdown(
     rows: List[Dict[str, str]],
     sim: dict,
     slices: List[Tuple[str, str]],
+    gates: List[Dict[str, str]],
 ) -> str:
     timestamp = _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     line_cov = _format_percent(coverage.get("line"))
@@ -103,18 +129,29 @@ def _write_markdown(
         "",
         f"_Generated {timestamp}_",
         "",
-        "## Simulation",
-        f"- Status: **{status}**",
-        f"- Failures: {failures}",
-        "",
-        "## Coverage",
-        f"- Line: {line_cov}",
-        f"- Toggle: {toggle_cov}",
-        "",
-        "## Requirements",
-        "| Req | Status | Tags | Coverage | Description |",
-        "| --- | --- | --- | --- | --- |",
+        "## Gates",
     ]
+    if gates:
+        for gate in gates:
+            lines.append(f"- {gate['icon']} {gate['name']}: {gate['detail']}")
+    else:
+        lines.append("- n/a")
+    lines.extend(
+        [
+            "",
+            "## Simulation",
+            f"- Status: **{status}**",
+            f"- Failures: {failures}",
+            "",
+            "## Coverage",
+            f"- Line: {line_cov}",
+            f"- Toggle: {toggle_cov}",
+            "",
+            "## Requirements",
+            "| Req | Status | Tags | Coverage | Description |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
     if rows:
         for row in rows:
             lines.append(
@@ -139,6 +176,7 @@ def _write_html(
     rows: List[Dict[str, str]],
     sim: dict,
     slices: List[Tuple[str, str]],
+    gates: List[Dict[str, str]],
 ) -> str:
     timestamp = _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     line_cov = _format_percent(coverage.get("line"))
@@ -169,6 +207,14 @@ def _write_html(
     else:
         slices_html = ''
 
+    if gates:
+        gates_html = ''.join(
+            f"<li>{html.escape(gate['icon'])} {html.escape(gate['name'])}: {html.escape(gate['detail'])}</li>"
+            for gate in gates
+        )
+    else:
+        gates_html = '<li>n/a</li>'
+
     body = f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -188,6 +234,12 @@ th {{ background: #f0f0f0; }}
 <body>
   <h1>Verification Dashboard</h1>
   <p><em>Generated {timestamp}</em></p>
+  <section class="section">
+    <h2>Gates</h2>
+    <ul>
+      {gates_html}
+    </ul>
+  </section>
   <section class="section">
     <h2>Simulation</h2>
     <ul>
@@ -222,6 +274,123 @@ th {{ background: #f0f0f0; }}
     return html_text
 
 
+def _collect_gate_summary(
+    reports_dir: pathlib.Path,
+    coverage: Dict[str, Any],
+    per_req_cov: Dict[str, Any],
+    sim: Dict[str, Any],
+    reqs: List[Dict[str, Any]],
+) -> List[Dict[str, str]]:
+    summary: List[Dict[str, str]] = []
+
+    policies_path = pathlib.Path("policies.yml")
+    if policies_path.exists():
+        try:
+            policies = yaml.safe_load(policies_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            policies = {}
+    else:
+        policies = {}
+
+    coverage_policy = policies.get("coverage", {}) if isinstance(policies, dict) else {}
+    synth_policy = policies.get("synth", {}) if isinstance(policies, dict) else {}
+
+    sim_status = sim.get("status")
+    if isinstance(sim_status, str):
+        status_norm = sim_status.lower()
+        if status_norm in {"pass", "ok", "passed"}:
+            summary.append(_gate_entry("Simulation", True, sim_status.upper()))
+        elif status_norm:
+            summary.append(_gate_entry("Simulation", False, sim_status.upper()))
+        else:
+            summary.append(_gate_entry("Simulation", None, "n/a"))
+    else:
+        summary.append(_gate_entry("Simulation", None, "n/a"))
+
+    line_target = _fraction(coverage_policy.get("line"))
+    line_value = coverage.get("line")
+    if line_target is not None and isinstance(line_value, (int, float)):
+        ok = line_value + 1e-9 >= line_target
+        detail = f"{_format_percent(line_value)} (>= {_format_percent(line_target)})"
+        summary.append(_gate_entry("Line coverage", ok, detail))
+    elif isinstance(line_value, (int, float)):
+        summary.append(_gate_entry("Line coverage", None, _format_percent(line_value)))
+    else:
+        summary.append(_gate_entry("Line coverage", None, "n/a"))
+
+    toggle_target = _fraction(coverage_policy.get("toggle"))
+    toggle_value = coverage.get("toggle")
+    if toggle_target is not None and isinstance(toggle_value, (int, float)):
+        ok = toggle_value + 1e-9 >= toggle_target
+        detail = f"{_format_percent(toggle_value)} (>= {_format_percent(toggle_target)})"
+        summary.append(_gate_entry("Toggle coverage", ok, detail))
+    elif isinstance(toggle_value, (int, float)):
+        summary.append(_gate_entry("Toggle coverage", None, _format_percent(toggle_value)))
+    else:
+        summary.append(_gate_entry("Toggle coverage", None, "n/a"))
+
+    default_target = _fraction(coverage_policy.get("per_requirement"))
+    overrides_raw = coverage_policy.get("per_req_overrides", {}) if isinstance(coverage_policy, dict) else {}
+    override_map = {
+        str(key).lower(): _fraction(val)
+        for key, val in overrides_raw.items()
+        if _fraction(val) is not None
+    }
+    per_req_entries = {
+        entry.get("id"): entry
+        for entry in per_req_cov.get("requirements", [])
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str)
+    }
+    tracked_requirements = [req for req in reqs if isinstance(req, dict) and isinstance(req.get("id"), str)]
+    if tracked_requirements and (default_target is not None or override_map):
+        failing: List[str] = []
+        for req in tracked_requirements:
+            rid = req["id"]
+            priority = str(req.get("priority", "")).lower()
+            target = override_map.get(priority, default_target)
+            if target is None:
+                continue
+            entry = per_req_entries.get(rid, {})
+            line_val = entry.get("line")
+            fraction = float(line_val) if isinstance(line_val, (int, float)) else 0.0
+            if fraction + 1e-9 < target:
+                failing.append(rid)
+        if failing:
+            detail = "Missing coverage: " + ", ".join(failing[:5])
+            if len(failing) > 5:
+                detail += ", …"
+            summary.append(_gate_entry("Per-requirement coverage", False, detail))
+        else:
+            target_percent = _format_percent(default_target) if default_target is not None else "policy override"
+            summary.append(_gate_entry("Per-requirement coverage", True, f"Targets met ({target_percent})"))
+    else:
+        summary.append(_gate_entry("Per-requirement coverage", None, "n/a"))
+
+    synth_report = _load_json(reports_dir / "synth_report.json")
+    has_latch = synth_report.get("has_latch")
+    forbid_latches = bool(synth_policy.get("forbid_latches", False)) if isinstance(synth_policy, dict) else False
+    if forbid_latches and isinstance(has_latch, bool):
+        summary.append(_gate_entry("Synthesis latches", not has_latch, "no latches inferred" if not has_latch else "latches detected"))
+    elif isinstance(has_latch, bool):
+        detail = "no latches inferred" if not has_latch else "latches detected"
+        summary.append(_gate_entry("Synthesis latches", None, detail))
+    else:
+        summary.append(_gate_entry("Synthesis latches", None, "n/a"))
+
+    formal_summary = _load_json(reports_dir / "formal" / "summary.json")
+    tasks = [task for task in formal_summary.get("tasks", []) if isinstance(task, dict)]
+    if tasks:
+        failing = [task.get("name", "?") for task in tasks if not task.get("optional") and task.get("status") != "PASS"]
+        if failing:
+            summary.append(_gate_entry("Formal", False, "Failed tasks: " + ", ".join(failing)))
+        else:
+            summary.append(_gate_entry("Formal", True, "All required profiles pass"))
+    else:
+        summary.append(_gate_entry("Formal", None, "n/a"))
+
+    return summary
+
+
 def main() -> None:
     args = parse_args()
     reports_dir = args.reports
@@ -247,8 +416,10 @@ def main() -> None:
             rel = png.relative_to(reports_dir)
             slices.append((png.stem, rel.as_posix()))
 
-    markdown = _write_markdown(out_dir, coverage, rows, sim, slices)
-    html_text = _write_html(out_dir, coverage, rows, sim, slices)
+    gates = _collect_gate_summary(reports_dir, coverage, per_req_cov, sim, reqs)
+
+    markdown = _write_markdown(out_dir, coverage, rows, sim, slices, gates)
+    html_text = _write_html(out_dir, coverage, rows, sim, slices, gates)
 
     site_dir = reports_dir / "site"
     site_dir.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,3 @@
+# Generated via pip freeze on 2025-10-03
+pyflakes==3.2.0
+pyyaml==6.0.1

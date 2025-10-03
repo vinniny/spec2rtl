@@ -38,8 +38,8 @@ Spec2Tests → Tests & SVAs → Simulation + Coverage → Judge → Synthesis �
    sudo apt install verilator symbiyosys gtkwave   # gtkwave optional but useful
    ```
    For SystemVerilog synthesis use either:
-   - **OSS CAD Suite** (recommended) – download the latest bundle with UHDM-enabled Yosys.
-   - **Yosys + Surelog/UHDM** – build from source if you prefer.
+   - **OSS CAD Suite** (recommended) – download a tagged bundle with UHDM-enabled Yosys; it also ships SymbiYosys (`sby`) so no separate package install is required.
+   - **Yosys + Surelog/UHDM** – build from source if you prefer and install SymbiYosys alongside it.
 
 3. **Verible**
    - The repository ships a pinned build under `tools/verible/` that is used automatically.
@@ -60,10 +60,13 @@ Spec2Tests → Tests & SVAs → Simulation + Coverage → Judge → Synthesis �
    ```
    This records the versions that CI expects to see. Address any `n/a` entries before running the full flow.
 
+If you use VS Code or GitHub Codespaces, the repository ships a `.devcontainer/devcontainer.json` that bootstraps the pinned Python environment and exposes the OSS-CAD Suite tag used in CI.
+
 ## Workflow Overview
 
 ### 1. Describe the design (`docs/spec.md`)
 Requirements are written in Markdown using “shall/must” language. Each bullet becomes a tracked requirement with unique ID (`R1`, `R2`, …).
+For a quick-start template copy `docs/spec.sample.md`, edit the requirement text, then run `make spec2tests`.
 
 ### 2. Generate verification collateral (Spec2Tests)
 `python3 scripts/spec2tests.py` or `make spec2tests`
@@ -152,6 +155,10 @@ Requirements are written in Markdown using “shall/must” language. Each bulle
 
 ## CI/CD
 GitHub Actions runs lint → check → `ai-verify` → synth → `ai-synth` → formal → dashboards/badge. Reports and AI advice are uploaded as build artifacts and the coverage badge embedded in this README is refreshed automatically.
+
+## Contributing & License
+- Follow the steps in [CONTRIBUTING.md](CONTRIBUTING.md) to reproduce the smoke flow and keep regenerated artifacts consistent.
+- This template is released under the [MIT License](LICENSE).
 
 ## Contribution Guidelines
 - **Keep spec and artifacts in sync** – run `make spec2tests` whenever you touch `docs/spec.md`; commit the regenerated files under `verification/`.

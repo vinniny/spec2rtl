@@ -1,0 +1,27 @@
+{
+  "name": "spec2rtl",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "username": "vscode",
+      "nonFreePackages": false
+    }
+  },
+  "postCreateCommand": "python3 -m venv .venv && . .venv/bin/activate && pip install --upgrade pip && if [ -f requirements.lock ]; then pip install -r requirements.lock; elif [ -f requirements.txt ]; then pip install -r requirements.txt; fi",
+  "remoteEnv": {
+    "OSS_CAD_SUITE_TAG": "2024-08-26",
+    "OSS_CAD_SUITE_PLATFORM": "linux-x64"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-vscode.cpptools",
+        "mshr-h.veriloghdl"
+      ]
+    }
+  }
+}
