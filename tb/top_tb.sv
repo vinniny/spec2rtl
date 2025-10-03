@@ -29,7 +29,9 @@ module top_tb;
   );
 
   initial clk = 1'b0;
+  /* verilator lint_off BLKSEQ */
   always #5 clk = ~clk;
+  /* verilator lint_on BLKSEQ */
 
   initial begin
     if (!$value$plusargs("seed=%d", seed)) begin
