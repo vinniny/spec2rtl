@@ -19,6 +19,52 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - name: Build Synlig (Yosys+UHDM) with cache
+        id: synlig-prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang bison flex libreadline-dev gawk tcl-dev libffi-dev \
+            git pkg-config python3 python3-venv python3-pip zlib1g-dev cmake ninja-build \
+            graphviz xdot
+          if [ ! -d synlig ]; then
+            git clone --recursive https://github.com/chipsalliance/synlig.git
+          else
+            cd synlig
+            git fetch --recurse-submodules --tags
+            git submodule update --init --recursive
+            cd ..
+          fi
+          cd synlig
+          SYNLIG_SHA=$(git rev-parse HEAD)
+          echo "SYNLIG_SHA=$SYNLIG_SHA" >> $GITHUB_ENV
+          echo "commit=$SYNLIG_SHA" >> $GITHUB_OUTPUT
+      - name: Restore Synlig cache
+        id: synlig-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            synlig/build
+            synlig/bin
+            synlig/share
+          key: synlig-${{ steps.synlig-prepare.outputs.commit }}
+          restore-keys: synlig-
+      - name: Compile Synlig
+        if: ${{ steps.synlig-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd synlig
+          make config-gcc
+          make -j$(nproc)
+          ./bin/yosys -V | head -n 1
+      - name: Export Synlig Yosys
+        shell: bash
+        run: |
+          echo "$GITHUB_WORKSPACE/synlig/bin" >> $GITHUB_PATH
+          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/bin/yosys" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -87,6 +133,52 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - name: Build Synlig (Yosys+UHDM) with cache
+        id: synlig-prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang bison flex libreadline-dev gawk tcl-dev libffi-dev \
+            git pkg-config python3 python3-venv python3-pip zlib1g-dev cmake ninja-build \
+            graphviz xdot
+          if [ ! -d synlig ]; then
+            git clone --recursive https://github.com/chipsalliance/synlig.git
+          else
+            cd synlig
+            git fetch --recurse-submodules --tags
+            git submodule update --init --recursive
+            cd ..
+          fi
+          cd synlig
+          SYNLIG_SHA=$(git rev-parse HEAD)
+          echo "SYNLIG_SHA=$SYNLIG_SHA" >> $GITHUB_ENV
+          echo "commit=$SYNLIG_SHA" >> $GITHUB_OUTPUT
+      - name: Restore Synlig cache
+        id: synlig-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            synlig/build
+            synlig/bin
+            synlig/share
+          key: synlig-${{ steps.synlig-prepare.outputs.commit }}
+          restore-keys: synlig-
+      - name: Compile Synlig
+        if: ${{ steps.synlig-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd synlig
+          make config-gcc
+          make -j$(nproc)
+          ./bin/yosys -V | head -n 1
+      - name: Export Synlig Yosys
+        shell: bash
+        run: |
+          echo "$GITHUB_WORKSPACE/synlig/bin" >> $GITHUB_PATH
+          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/bin/yosys" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
