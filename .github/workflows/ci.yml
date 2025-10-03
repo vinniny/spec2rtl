@@ -20,19 +20,42 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          set -x
+          trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
           INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
           TAG=$(printf '%s' "$INFO" | jq -r .tagName)
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "[install-eda] Failed to detect oss-cad-suite tag" >&2
+            exit 1
+          fi
           ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' \
             | grep -E '^oss-cad-suite-linux-x64.*\\.(tar\\.xz|tgz)$' | head -n1)
+          if [ -z "$ASSET" ] || [ "$ASSET" = "null" ]; then
+            echo "[install-eda] No matching OSS-CAD asset found" >&2
+            exit 1
+          fi
+          echo "Selected OSS-CAD asset: $ASSET"
           gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
+          if [ ! -f "/tmp/$ASSET" ]; then
+            echo "OSS-CAD asset not downloaded!" >&2
+            exit 1
+          fi
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+          if [ ! -d "$GITHUB_WORKSPACE/oss-cad-suite/bin" ]; then
+            echo "[install-eda] Missing oss-cad-suite/bin after extraction" >&2
+            exit 1
+          fi
 
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
 
           YOSYS_SV_BIN=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
+          if [ -z "$YOSYS_SV_BIN" ]; then
+            echo "[install-eda] yosys binary not found" >&2
+            exit 1
+          fi
           echo "YOSYS_SV_BIN=$YOSYS_SV_BIN" >> $GITHUB_ENV
           echo "UHDM=0" >> $GITHUB_ENV
 
@@ -46,29 +69,50 @@ jobs:
           restore-keys: ${{ runner.os }}-pip-
       - name: Python deps
         run: |
+          set -euo pipefail
+          set -x
+          trap 'echo "[python-deps] command failed: $BASH_COMMAND"' ERR
+          if [ ! -f requirements.lock ] && [ ! -f requirements.txt ]; then
+            echo "No requirements file found!" >&2
+            exit 1
+          fi
           python -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip
           if [ -f requirements.lock ]; then
             pip install -r requirements.lock
+            echo "Installed dependencies from requirements.lock"
           elif [ -f requirements.txt ]; then
             pip install -r requirements.txt
+            echo "Installed dependencies from requirements.txt"
           fi
+          pip list
       - name: Env & spec
         run: |
+          set -euo pipefail
+          set -x
+          trap 'echo "[env-spec] command failed: $BASH_COMMAND"' ERR
           . .venv/bin/activate
           make env
+          echo "make env completed"
           make spec
+          echo "make spec completed"
       - name: Lint + report + gates
         env:
           REPORTS_DIR: reports/ci_smoke
           SEED: 42
           POLICIES: policies.ci.yml
         run: |
+          set -euo pipefail
+          set -x
+          trap 'echo "[lint-report] command failed: $BASH_COMMAND"' ERR
           . .venv/bin/activate
           make lint
+          echo "make lint completed"
           make report
+          echo "make report completed"
           python3 scripts/check_gates.py --policies "$POLICIES" --reports "$REPORTS_DIR"
+          echo "check_gates completed"
       - name: Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -88,19 +132,42 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          set -x
+          trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
           INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
           TAG=$(printf '%s' "$INFO" | jq -r .tagName)
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "[install-eda] Failed to detect oss-cad-suite tag" >&2
+            exit 1
+          fi
           ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' \
             | grep -E '^oss-cad-suite-linux-x64.*\\.(tar\\.xz|tgz)$' | head -n1)
+          if [ -z "$ASSET" ] || [ "$ASSET" = "null" ]; then
+            echo "[install-eda] No matching OSS-CAD asset found" >&2
+            exit 1
+          fi
+          echo "Selected OSS-CAD asset: $ASSET"
           gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
+          if [ ! -f "/tmp/$ASSET" ]; then
+            echo "OSS-CAD asset not downloaded!" >&2
+            exit 1
+          fi
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+          if [ ! -d "$GITHUB_WORKSPACE/oss-cad-suite/bin" ]; then
+            echo "[install-eda] Missing oss-cad-suite/bin after extraction" >&2
+            exit 1
+          fi
 
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
 
           YOSYS_SV_BIN=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
+          if [ -z "$YOSYS_SV_BIN" ]; then
+            echo "[install-eda] yosys binary not found" >&2
+            exit 1
+          fi
           echo "YOSYS_SV_BIN=$YOSYS_SV_BIN" >> $GITHUB_ENV
           echo "UHDM=0" >> $GITHUB_ENV
 
@@ -114,26 +181,43 @@ jobs:
           restore-keys: ${{ runner.os }}-pip-
       - name: Python deps
         run: |
+          set -euo pipefail
+          set -x
+          trap 'echo "[python-deps] command failed: $BASH_COMMAND"' ERR
+          if [ ! -f requirements.lock ] && [ ! -f requirements.txt ]; then
+            echo "No requirements file found!" >&2
+            exit 1
+          fi
           python -m venv .venv
           . .venv/bin/activate
           pip install --upgrade pip
           if [ -f requirements.lock ]; then
             pip install -r requirements.lock
+            echo "Installed dependencies from requirements.lock"
           elif [ -f requirements.txt ]; then
             pip install -r requirements.txt
+            echo "Installed dependencies from requirements.txt"
           fi
+          pip list
       - name: UHDM synth + formal + mutate
         env:
           REPORTS_DIR: reports/ci
           SEED: 12345
           POLICIES: policies.ci.yml
         run: |
+          set -euo pipefail
+          set -x
+          trap 'echo "[full-flow] command failed: $BASH_COMMAND"' ERR
           . .venv/bin/activate
           make quick
+          echo "make quick completed"
           make synth
-          make formal_core || true
+          echo "make synth completed"
+          make formal_core || { echo "make formal_core failed (continuing per policy)"; true; }
           make mutate
+          echo "make mutate completed"
           python3 scripts/check_gates.py --policies "$POLICIES" --reports "$REPORTS_DIR"
+          echo "check_gates completed"
       - name: Artifacts
         uses: actions/upload-artifact@v4
         with:
