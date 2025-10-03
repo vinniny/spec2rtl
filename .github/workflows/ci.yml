@@ -24,44 +24,57 @@ jobs:
           trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
-          TAG=$(printf '%s' "$INFO" | jq -r .tagName)
-          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
-            echo "[install-eda] Failed to detect oss-cad-suite tag" >&2
+          INFO="$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets --latest || true)"
+          if [ -z "$INFO" ] || [ "$INFO" = "null" ]; then
+            INFO="$(curl -fsSL -H \"Authorization: Bearer $GH_TOKEN\" \
+              https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest)"
+          fi
+
+          TAG="$(printf '%s\n' "$INFO" | jq -r '.tagName // .tag_name // empty')"
+          ASSET="$(printf '%s\n' "$INFO" | jq -r '
+            .assets[]?.name // empty
+            | select(test("^oss-cad-suite-.*(linux|ubuntu).*(x64|x86_64).*(\\.tar\\.xz|\\.tgz)$"))
+            | select(contains("musl") | not)
+          ' | head -n1)"
+
+          if [ -z "${ASSET:-}" ]; then
+            echo "[install-eda] No matching OSS-CAD asset found. Available assets were:"
+            printf '%s\n' "$INFO" | jq -r '.assets[]?.name // empty' || true
             exit 1
           fi
-          ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' \
-            | grep -E '^oss-cad-suite-linux-x64.*\\.(tar\\.xz|tgz)$' | head -n1)
-          if [ -z "$ASSET" ] || [ "$ASSET" = "null" ]; then
-            echo "[install-eda] No matching OSS-CAD asset found" >&2
-            exit 1
+
+          echo "[install-eda] Using release tag: ${TAG:-<unknown>} asset: $ASSET"
+
+          if [ -n "${TAG:-}" ]; then
+            gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O "/tmp/$ASSET" || {
+              echo "[install-eda] gh download failed, trying API URL"
+              URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
+                .assets[] | select(.name==$A) | .browser_download_url
+              ')"
+              curl -fL -o "/tmp/$ASSET" "$URL"
+            }
+          else
+            URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
+              .assets[] | select(.name==$A) | .browser_download_url
+            ')"
+            curl -fL -o "/tmp/$ASSET" "$URL"
           fi
-          echo "Selected OSS-CAD asset: $ASSET"
-          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
-          if [ ! -f "/tmp/$ASSET" ]; then
-            echo "OSS-CAD asset not downloaded!" >&2
-            exit 1
-          fi
+
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          if [ ! -d "$GITHUB_WORKSPACE/oss-cad-suite/bin" ]; then
-            echo "[install-eda] Missing oss-cad-suite/bin after extraction" >&2
-            exit 1
-          fi
+          case "$ASSET" in
+            *.tar.xz) tar -xJf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
+            *.tgz)    tar -xzf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
+            *) echo "[install-eda] Unknown archive type: $ASSET"; exit 1 ;;
+          esac
 
-          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
-
-          YOSYS_SV_BIN=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
-          if [ -z "$YOSYS_SV_BIN" ]; then
-            echo "[install-eda] yosys binary not found" >&2
-            exit 1
-          fi
-          echo "YOSYS_SV_BIN=$YOSYS_SV_BIN" >> $GITHUB_ENV
-          echo "UHDM=0" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> "$GITHUB_PATH"
+          YOSYS_SV_BIN_PATH=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
+          echo "YOSYS_SV_BIN=${YOSYS_SV_BIN_PATH}" >> "$GITHUB_ENV"
+          echo "UHDM=0" >> "$GITHUB_ENV"
 
           verilator --version
           sby --version
-          "$YOSYS_SV_BIN" -V | head -n1
+          "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" -V | head -n1
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -136,44 +149,57 @@ jobs:
           trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
-          TAG=$(printf '%s' "$INFO" | jq -r .tagName)
-          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
-            echo "[install-eda] Failed to detect oss-cad-suite tag" >&2
+          INFO="$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets --latest || true)"
+          if [ -z "$INFO" ] || [ "$INFO" = "null" ]; then
+            INFO="$(curl -fsSL -H \"Authorization: Bearer $GH_TOKEN\" \
+              https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest)"
+          fi
+
+          TAG="$(printf '%s\n' "$INFO" | jq -r '.tagName // .tag_name // empty')"
+          ASSET="$(printf '%s\n' "$INFO" | jq -r '
+            .assets[]?.name // empty
+            | select(test("^oss-cad-suite-.*(linux|ubuntu).*(x64|x86_64).*(\\.tar\\.xz|\\.tgz)$"))
+            | select(contains("musl") | not)
+          ' | head -n1)"
+
+          if [ -z "${ASSET:-}" ]; then
+            echo "[install-eda] No matching OSS-CAD asset found. Available assets were:"
+            printf '%s\n' "$INFO" | jq -r '.assets[]?.name // empty' || true
             exit 1
           fi
-          ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' \
-            | grep -E '^oss-cad-suite-linux-x64.*\\.(tar\\.xz|tgz)$' | head -n1)
-          if [ -z "$ASSET" ] || [ "$ASSET" = "null" ]; then
-            echo "[install-eda] No matching OSS-CAD asset found" >&2
-            exit 1
+
+          echo "[install-eda] Using release tag: ${TAG:-<unknown>} asset: $ASSET"
+
+          if [ -n "${TAG:-}" ]; then
+            gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O "/tmp/$ASSET" || {
+              echo "[install-eda] gh download failed, trying API URL"
+              URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
+                .assets[] | select(.name==$A) | .browser_download_url
+              ')"
+              curl -fL -o "/tmp/$ASSET" "$URL"
+            }
+          else
+            URL="$(printf '%s\n' "$INFO" | jq -r --arg A "$ASSET" '
+              .assets[] | select(.name==$A) | .browser_download_url
+            ')"
+            curl -fL -o "/tmp/$ASSET" "$URL"
           fi
-          echo "Selected OSS-CAD asset: $ASSET"
-          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
-          if [ ! -f "/tmp/$ASSET" ]; then
-            echo "OSS-CAD asset not downloaded!" >&2
-            exit 1
-          fi
+
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          if [ ! -d "$GITHUB_WORKSPACE/oss-cad-suite/bin" ]; then
-            echo "[install-eda] Missing oss-cad-suite/bin after extraction" >&2
-            exit 1
-          fi
+          case "$ASSET" in
+            *.tar.xz) tar -xJf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
+            *.tgz)    tar -xzf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
+            *) echo "[install-eda] Unknown archive type: $ASSET"; exit 1 ;;
+          esac
 
-          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
-
-          YOSYS_SV_BIN=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
-          if [ -z "$YOSYS_SV_BIN" ]; then
-            echo "[install-eda] yosys binary not found" >&2
-            exit 1
-          fi
-          echo "YOSYS_SV_BIN=$YOSYS_SV_BIN" >> $GITHUB_ENV
-          echo "UHDM=0" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> "$GITHUB_PATH"
+          YOSYS_SV_BIN_PATH=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
+          echo "YOSYS_SV_BIN=${YOSYS_SV_BIN_PATH}" >> "$GITHUB_ENV"
+          echo "UHDM=0" >> "$GITHUB_ENV"
 
           verilator --version
           sby --version
-          "$YOSYS_SV_BIN" -V | head -n1
+          "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" -V | head -n1
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
