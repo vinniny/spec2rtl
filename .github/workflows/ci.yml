@@ -64,9 +64,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m pip install --upgrade "pip<25"
+          python3 -m pip install --user "orderedmultidict>=1.0,<2"
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          python3 -c "import orderedmultidict, sys; print('orderedmultidict', orderedmultidict.__version__)"
           cd synlig
-          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/install
-          ninja -C build install
+          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
+          ninja -C build
+          cmake --install build --prefix install
           ./install/bin/yosys -V | head -n 1
       - name: Export Synlig Yosys
         shell: bash
@@ -186,9 +191,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m pip install --upgrade "pip<25"
+          python3 -m pip install --user "orderedmultidict>=1.0,<2"
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          python3 -c "import orderedmultidict, sys; print('orderedmultidict', orderedmultidict.__version__)"
           cd synlig
-          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/install
-          ninja -C build install
+          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
+          ninja -C build
+          cmake --install build --prefix install
           ./install/bin/yosys -V | head -n 1
       - name: Export Synlig Yosys
         shell: bash
