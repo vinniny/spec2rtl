@@ -24,7 +24,7 @@ jobs:
           trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          git clone --branch master --tags https://github.com/YosysHQ/SymbiYosys.git /tmp/SymbiYosys
+          git clone --branch main --tags https://github.com/YosysHQ/SymbiYosys.git /tmp/SymbiYosys
           (cd /tmp/SymbiYosys && make)
           sudo install /tmp/SymbiYosys/sby /usr/local/bin/
           INFO="$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets --latest || true)"
@@ -152,7 +152,7 @@ jobs:
           trap 'echo "[install-eda] command failed: $BASH_COMMAND"' ERR
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          git clone --branch master --tags https://github.com/YosysHQ/SymbiYosys.git /tmp/SymbiYosys
+          git clone --branch main --tags https://github.com/YosysHQ/SymbiYosys.git /tmp/SymbiYosys
           (cd /tmp/SymbiYosys && make)
           sudo install /tmp/SymbiYosys/sby /usr/local/bin/
           INFO="$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets --latest || true)"
