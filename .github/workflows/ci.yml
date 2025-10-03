@@ -47,15 +47,14 @@ jobs:
         with:
           path: |
             synlig/build
-            synlig/bin
-            synlig/share
+            synlig/install
           key: synlig-${{ steps.synlig-prepare.outputs.commit }}
           restore-keys: synlig-
       - name: Check Synlig binary
         id: synlig-check
         shell: bash
         run: |
-          if [ -f synlig/bin/yosys ]; then
+          if [ -f synlig/install/bin/yosys ]; then
             echo "needs_build=false" >> $GITHUB_OUTPUT
           else
             echo "needs_build=true" >> $GITHUB_OUTPUT
@@ -66,13 +65,14 @@ jobs:
         run: |
           set -euo pipefail
           cd synlig
-          make -j$(nproc)
-          ./bin/yosys -V | head -n 1
+          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/install
+          ninja -C build install
+          ./install/bin/yosys -V | head -n 1
       - name: Export Synlig Yosys
         shell: bash
         run: |
-          echo "$GITHUB_WORKSPACE/synlig/bin" >> $GITHUB_PATH
-          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/bin/yosys" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/synlig/install/bin" >> $GITHUB_PATH
+          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/install/bin/yosys" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -169,15 +169,14 @@ jobs:
         with:
           path: |
             synlig/build
-            synlig/bin
-            synlig/share
+            synlig/install
           key: synlig-${{ steps.synlig-prepare.outputs.commit }}
           restore-keys: synlig-
       - name: Check Synlig binary
         id: synlig-check
         shell: bash
         run: |
-          if [ -f synlig/bin/yosys ]; then
+          if [ -f synlig/install/bin/yosys ]; then
             echo "needs_build=false" >> $GITHUB_OUTPUT
           else
             echo "needs_build=true" >> $GITHUB_OUTPUT
@@ -188,13 +187,14 @@ jobs:
         run: |
           set -euo pipefail
           cd synlig
-          make -j$(nproc)
-          ./bin/yosys -V | head -n 1
+          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/install
+          ninja -C build install
+          ./install/bin/yosys -V | head -n 1
       - name: Export Synlig Yosys
         shell: bash
         run: |
-          echo "$GITHUB_WORKSPACE/synlig/bin" >> $GITHUB_PATH
-          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/bin/yosys" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/synlig/install/bin" >> $GITHUB_PATH
+          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/install/bin/yosys" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
