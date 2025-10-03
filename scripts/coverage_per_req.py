@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import pathlib
 import re
+from typing import Dict
 
 try:
     import yaml
 except ModuleNotFoundError as exc:
     raise SystemExit("PyYAML is required: pip install pyyaml") from exc
 
-REQ_PATH = pathlib.Path("verification/reqs.yml")
-SIM_REPORT_PATH = pathlib.Path("reports/sim_report.json")
-COVERAGE_JSON_PATH = pathlib.Path("reports/coverage.json")
-SIM_LOG_PATH = pathlib.Path("reports/sim.log")
-TB_PATH = pathlib.Path("tb/top_tb.sv")
-OUT_PATH = pathlib.Path("reports/coverage_per_req.json")
+from json_schemas import SchemaError, validate_coverage_per_req
 
 BIN_LABELS = ("zero", "mid", "max")
 CROSS_LABELS = tuple(f"{a}_{b}" for a in BIN_LABELS for b in BIN_LABELS)
 COVBIN_RE = re.compile(r"\[COVBIN\]\s+(?P<req>\S+)\s+a=(?P<a>\d+)\s+b=(?P<b>\d+)")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Summarise coverage per requirement")
+    parser.add_argument("--reqs", type=pathlib.Path, default=pathlib.Path("verification/reqs.yml"))
+    parser.add_argument("--sim", type=pathlib.Path, default=pathlib.Path("reports/sim_report.json"))
+    parser.add_argument("--cov", type=pathlib.Path, default=pathlib.Path("reports/coverage.json"))
+    parser.add_argument("--log", type=pathlib.Path, default=pathlib.Path("reports/sim.log"))
+    parser.add_argument("--tb", type=pathlib.Path, default=pathlib.Path("tb/top_tb.sv"))
+    parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("reports/coverage_per_req.json"))
+    return parser.parse_args()
 
 
 def infer_width_from_tb(tb_path: pathlib.Path) -> int:
@@ -78,51 +86,73 @@ def bin_coverage(counts: dict[str, dict[str, int]]) -> dict[str, float]:
     coverage["cross"] = cross_hits / len(CROSS_LABELS)
     return coverage
 
-if not REQ_PATH.exists() or not SIM_REPORT_PATH.exists():
-    raise SystemExit("Missing requirements or simulation report; run make report first")
 
-reqs = yaml.safe_load(REQ_PATH.read_text(encoding="utf-8"))
-reqs_list = reqs.get("requirements", [])
-sim_report = json.loads(SIM_REPORT_PATH.read_text(encoding="utf-8"))
-coverage_summary = {}
-if COVERAGE_JSON_PATH.exists():
-    coverage_summary = json.loads(COVERAGE_JSON_PATH.read_text(encoding="utf-8"))
+def load_json(path: pathlib.Path) -> Dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
 
-samples = sim_report.get("coverage_samples", {})
-total_samples = sum(samples.values())
-line_global = coverage_summary.get("line")
-toggle_global = coverage_summary.get("toggle")
 
-width = infer_width_from_tb(TB_PATH)
-max_value = (1 << width) - 1
-covbin_counts_map = parse_covbin_log(SIM_LOG_PATH, max_value)
+def main() -> None:
+    args = parse_args()
+    if not args.reqs.exists() or not args.sim.exists():
+        raise SystemExit("Missing requirements or simulation report; run make report first")
 
-requirements = []
-for req in reqs_list:
-    rid = req.get("id")
-    sample_count = samples.get(rid, 0)
-    line_cov = line_global if sample_count > 0 and line_global is not None else 0.0
-    toggle_cov = toggle_global if sample_count > 0 and toggle_global is not None else 0.0
-    bin_counts = copy.deepcopy(covbin_counts_map.get(rid, init_bin_counts()))
-    bin_cov = bin_coverage(bin_counts)
-    requirements.append(
-        {
-            "id": rid,
-            "samples": sample_count,
-            "line": line_cov,
-            "toggle": toggle_cov,
-            "bins": {
-                "counts": bin_counts,
-                "coverage": bin_cov,
-            },
-        }
-    )
+    reqs = yaml.safe_load(args.reqs.read_text(encoding="utf-8"))
+    reqs_list = reqs.get("requirements", [])
+    sim_report = load_json(args.sim)
+    coverage_summary = load_json(args.cov)
 
-payload = {
-    "schema": 1,
-    "total_samples": total_samples,
-    "requirements": requirements,
-}
+    samples = sim_report.get("coverage_samples", {})
+    total_samples = sum(samples.values()) if isinstance(samples, dict) else 0
+    line_global = coverage_summary.get("line") if isinstance(coverage_summary, dict) else None
+    toggle_global = coverage_summary.get("toggle") if isinstance(coverage_summary, dict) else None
 
-OUT_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-print(f"Wrote {OUT_PATH}")
+    width = infer_width_from_tb(args.tb)
+    max_value = (1 << width) - 1
+    covbin_counts_map = parse_covbin_log(args.log, max_value)
+
+    requirements = []
+    for req in reqs_list:
+        rid = req.get("id")
+        if not isinstance(rid, str):
+            continue
+        sample_count = samples.get(rid, 0) if isinstance(samples, dict) else 0
+        line_cov = line_global if sample_count > 0 and isinstance(line_global, (int, float)) else 0.0
+        toggle_cov = toggle_global if sample_count > 0 and isinstance(toggle_global, (int, float)) else 0.0
+        bin_counts = copy.deepcopy(covbin_counts_map.get(rid, init_bin_counts()))
+        bin_cov = bin_coverage(bin_counts)
+        requirements.append(
+            {
+                "id": rid,
+                "samples": sample_count,
+                "line": line_cov,
+                "toggle": toggle_cov,
+                "bins": {
+                    "counts": bin_counts,
+                    "coverage": bin_cov,
+                },
+            }
+        )
+
+    payload = {
+        "schema": 1,
+        "total_samples": total_samples,
+        "requirements": requirements,
+    }
+
+    try:
+        validate_coverage_per_req(payload)
+    except SchemaError as exc:
+        raise SystemExit(f"coverage_per_req.json schema validation failed: {exc}") from exc
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"Wrote {args.out}")
+
+
+if __name__ == "__main__":
+    main()

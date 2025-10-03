@@ -37,6 +37,7 @@ class Specification:
 
 MARKDOWN_DIVIDER = set("-: ")
 IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+REQ_LINE_RE = re.compile(r"^[-*]\s*\[[^\]]+]\s*(?:\([^\)]*\))?\s*(?P<text>.+)$")
 
 
 def _extract_identifier(value: str) -> str:
@@ -111,9 +112,11 @@ def parse_spec(path: Path) -> Specification:
             section = None
             continue
         elif section == "requirements" and line.startswith(("- ", "* ")):
-            requirement = line[1:].strip()
-            if requirement:
-                spec.requirements.append(requirement)
+            match = REQ_LINE_RE.match(line)
+            if match:
+                summary = match.group("text").strip()
+                if summary:
+                    spec.requirements.append(summary)
         idx += 1
 
     return spec

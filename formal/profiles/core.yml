@@ -1,0 +1,6 @@
+tasks:
+  - name: core
+    sby: formal/top.sby
+  - name: protocol
+    sby: formal/top_protocol.sby
+    optional: true

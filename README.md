@@ -1,5 +1,10 @@
 # spec2rtl
 
+[![CI](https://github.com/vinniny/spec2rtl/actions/workflows/ci.yml/badge.svg)](https://github.com/vinniny/spec2rtl/actions/workflows/ci.yml)
+![Coverage](docs/coverage_badge.svg)
+
+[Template Guide](docs/TEMPLATE_GUIDE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+
 **From spec → RTL → verification → synthesis with reproducible, requirement-aware automation.**
 
 ```

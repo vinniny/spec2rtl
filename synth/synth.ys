@@ -1,5 +1,7 @@
+plugin -i systemverilog
 read_systemverilog -sv rtl/top.sv
 hierarchy -top top
-synth -flatten -top top
-stat
+proc
+opt
+check
 write_json synth/out.json

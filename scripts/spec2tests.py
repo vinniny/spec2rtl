@@ -2,21 +2,37 @@
 """Generate verification artifacts from docs/spec.md."""
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import re
-from typing import Any, Dict, List, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Sequence, Tuple
 
 try:
     import yaml
 except ModuleNotFoundError as exc:  # pragma: no cover - explicit dependency hint
     raise SystemExit("PyYAML is required: pip install pyyaml") from exc
 
-SPEC_PATH = pathlib.Path("docs/spec.md")
-OUT_DIR = pathlib.Path("verification")
-REQS_PATH = OUT_DIR / "reqs.yml"
-PLAN_PATH = OUT_DIR / "test_plan.md"
-SVAS_PATH = OUT_DIR / "svas.sv"
+
+@dataclass(frozen=True)
+class Requirement:
+    rid: str
+    summary: str
+    tags: Tuple[str, ...]
+    priority: str
+
+
+def _sv_ident(value: str, *, prefix_if_digit: str = "p_") -> str:
+    """Return a SystemVerilog-safe identifier derived from *value*."""
+    cleaned = re.sub(r"[^A-Za-z0-9_]", "_", str(value))
+    cleaned = re.sub(r"__+", "_", cleaned).strip("_")
+    if not cleaned:
+        cleaned = f"{prefix_if_digit}id"
+    if cleaned[0].isdigit():
+        cleaned = f"{prefix_if_digit}{cleaned}"
+    return cleaned
+
 
 LIBRARY_BY_TAG = {
     "reset": "lib/reset.svh",
@@ -27,20 +43,25 @@ LIBRARY_BY_TAG = {
 }
 
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+REQ_LINE_RE = re.compile(
+    r"^[-*]\s*\[(?P<id>[A-Z0-9\-]+)]\s*(?:\((?P<meta>[^)]*)\))?\s*(?P<text>.+)$"
+)
+REQ_ID_RE = re.compile(r"^R-[A-Z0-9]+-\d{3}$")
+ALLOWED_PRIORITIES = {"must", "should"}
 
 
-def load_existing_metadata() -> Dict[str, Dict[str, Any]]:
-    if not REQS_PATH.exists():
+def load_existing_metadata(reqs_path: pathlib.Path) -> Dict[str, Dict[str, Any]]:
+    if not reqs_path.exists():
         return {}
     try:
-        data = yaml.safe_load(REQS_PATH.read_text(encoding="utf-8"))
+        data = yaml.safe_load(reqs_path.read_text(encoding="utf-8"))
     except yaml.YAMLError:
         return {}
     existing: Dict[str, Dict[str, Any]] = {}
     for entry in data.get("requirements", []):
-        text = entry.get("text")
-        if isinstance(text, str):
-            existing[text] = entry
+        rid = entry.get("id")
+        if isinstance(rid, str):
+            existing[rid] = entry
     return existing
 
 
@@ -63,9 +84,12 @@ def merge_metadata(
                 merged[key] = existing[key]
 
     if "tags" in existing:
-        generated_tags = set(map(str, merged.get("tags", [])))
-        existing_tags = {str(tag) for tag in existing["tags"]}
+        generated_tags = {str(tag).lower() for tag in merged.get("tags", [])}
+        existing_tags = {str(tag).lower() for tag in existing["tags"]}
         merged["tags"] = sorted(existing_tags | generated_tags)
+
+    if "priority" in existing and "priority" not in merged:
+        merged["priority"] = existing["priority"]
 
     return merged
 
@@ -102,123 +126,170 @@ def parse_module_name(text: str) -> str:
     return match.group("name") if match else "top"
 
 
-def extract_requirements(text: str) -> List[str]:
-    """Return unique requirement sentences that contain key verbs."""
-    keyword_re = re.compile(r"\b(shall|must|should|corner)\b", re.IGNORECASE)
-    requirements: List[str] = []
-    seen: set[str] = set()
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
+def parse_meta(meta: str) -> tuple[list[str], str]:
+    if not meta:
+        return [], ""
+
+    tags: list[str] = []
+    priority: str = ""
+
+    for segment in (part.strip() for part in meta.split(";")):
+        if not segment:
             continue
-        if keyword_re.search(line):
-            normalized = line.lstrip("-* ")
-            if normalized not in seen:
-                seen.add(normalized)
-                requirements.append(normalized)
-    return requirements
+        if ":" not in segment:
+            raise SystemExit(f"Requirement metadata must be key: value; got '{segment}'")
+        key, value = (piece.strip().lower() for piece in segment.split(":", 1))
+        if key == "tags":
+            tags = [tag.strip().lower() for tag in value.split(",") if tag.strip()]
+        elif key == "priority":
+            priority = value.strip().lower()
+        else:
+            raise SystemExit(f"Unsupported requirement metadata key '{key}'")
+
+    return tags, priority
 
 
-def classify_requirement(req_text: str) -> Dict[str, object]:
-    lower = req_text.lower()
-    tags: List[str] = []
-    acceptance = {"check": req_text}
-    stimuli: Dict[str, object] = {}
-    map_signals: Dict[str, Any] = {}
-    params: Dict[str, Any] = {}
+def parse_requirement_line(raw_line: str) -> Requirement:
+    match = REQ_LINE_RE.match(raw_line.strip())
+    if not match:
+        raise SystemExit(f"Requirement line is malformed: '{raw_line.strip()}'")
+
+    rid = match.group("id").strip()
+    if not REQ_ID_RE.fullmatch(rid):
+        raise SystemExit(
+            f"Requirement id '{rid}' must match pattern 'R-XXX-###' (letters/digits in XXX)"
+        )
+
+    tags, priority = parse_meta(match.group("meta") or "")
+    if not tags:
+        raise SystemExit(f"Requirement {rid} missing tags metadata")
+    if not priority:
+        raise SystemExit(f"Requirement {rid} missing priority metadata")
+    if priority not in ALLOWED_PRIORITIES:
+        allowed = ", ".join(sorted(ALLOWED_PRIORITIES))
+        raise SystemExit(f"Requirement {rid} priority '{priority}' not in {{{allowed}}}")
+
+    summary = match.group("text").strip()
+    if not summary:
+        raise SystemExit(f"Requirement {rid} missing descriptive text")
+
+    if not re.search(r"\b(shall|must|should)\b", summary, re.IGNORECASE):
+        raise SystemExit(f"Requirement {rid} text must include shall/must/should: '{summary}'")
+
+    tag_tuple = tuple(dict.fromkeys(tags))
+    return Requirement(rid=rid, summary=summary, tags=tag_tuple, priority=priority)
+
+
+def extract_requirements(text: str) -> List[Requirement]:
+    in_requirements = False
+    parsed: list[Requirement] = []
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        lower = stripped.lower()
+        if lower.startswith("## requirements"):
+            in_requirements = True
+            continue
+        if in_requirements and lower.startswith("## "):
+            break
+        if not in_requirements:
+            continue
+        if not stripped or not stripped.startswith(('-','*')):
+            continue
+        requirement = parse_requirement_line(stripped)
+        parsed.append(requirement)
+
+    if not parsed:
+        raise SystemExit("Spec contains no requirements in the expected format")
+
+    seen_ids: set[str] = set()
+    for req in parsed:
+        if req.rid in seen_ids:
+            raise SystemExit(f"Duplicate requirement id detected: {req.rid}")
+        seen_ids.add(req.rid)
+
+    return parsed
+
+
+def build_stimuli_from_text(req: Requirement) -> dict[str, Any]:
+    lower = req.summary.lower()
+    stimuli: dict[str, Any] = {}
+    directed: list[dict[str, Any]] = []
+
+    if "reset" in req.tags:
+        directed.append({"sequence": "drive rst_n low for 2 cycles, release, observe outputs"})
 
     if any(word in lower for word in ("sum", "add", "plus")):
-        tags.extend(["functional", "arithmetic"])
-        acceptance["check"] = "y equals a + b (modulo width)"
-        stimuli["directed"] = [
-            {"a": 0, "b": 0},
-            {"a": 255, "b": 1},
-            {"a": 170, "b": 85},
-        ]
+        directed.extend(
+            [
+                {"a": 0, "b": 0},
+                {"a": 255, "b": 1},
+                {"a": 170, "b": 85},
+            ]
+        )
         stimuli["random"] = {
-            "count": 64,
+            "count": 128,
             "constraints": {"a": [0, 255], "b": [0, 255]},
         }
-        if any(word in lower for word in ("wrap", "overflow")):
-            tags.append("overflow")
-    if any(word in lower for word in ("reset", "rst")):
-        if "reset" not in tags:
-            tags.append("reset")
-        acceptance["check"] = "y == 0 during and immediately after synchronous active-low reset"
-        stimuli.setdefault("directed", []).append(
-            {"sequence": "rst_n low for 2 cycles, release, observe y"}
-        )
-    handshake_hit = "handshake" in lower or ("ready" in lower and "valid" in lower)
-    if handshake_hit and "handshake" not in tags:
-        tags.append("handshake")
-        map_signals.setdefault("req", "req_valid")
-        map_signals.setdefault("ack", "req_ready")
-        params.setdefault("min", 1)
-        params.setdefault("max", 1)
-    if any(word in lower for word in ("one-hot", "onehot", "one hot")) and "onehot" not in tags:
-        tags.append("onehot")
-        map_signals.setdefault("signal", "ctrl_state")
-    if ("gray" in lower or "grey" in lower) and "gray" not in tags:
-        if "counter" in lower or "code" in lower:
-            tags.append("gray")
-            map_signals.setdefault("signal", "gray_state")
-    if "latency" in lower or ("within" in lower and "cycle" in lower):
-        if "latency" not in tags:
-            tags.append("latency")
-        params.setdefault("min", 1)
-        params.setdefault("max", 1)
-    if not tags:
-        tags.append("functional")
 
-    entry: Dict[str, object] = {
-        "text": req_text,
-        "tags": tags,
-        "acceptance": acceptance,
-    }
-    if map_signals:
-        entry["map"] = map_signals
-    if params:
-        entry["params"] = params
-    if "arithmetic" in tags:
-        entry["cov_targets"] = {"line": 0.85, "toggle": 0.70}
-    elif "reset" in tags:
-        entry["cov_targets"] = {"line": 0.05, "toggle": 0.0}
-    else:
-        entry["cov_targets"] = {"line": 0.50, "toggle": 0.50}
-    if stimuli:
-        entry["stimuli"] = stimuli
-    return entry
+    if directed:
+        stimuli["directed"] = directed
+
+    return stimuli
 
 
 def write_reqs(
     module: str,
-    requirements: List[str],
+    requirements: Sequence[Requirement],
     existing_meta: Dict[str, Dict[str, Any]],
+    reqs_path: pathlib.Path,
 ) -> List[Dict[str, object]]:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    payload: Dict[str, object] = {
+    reqs_dir = reqs_path.parent
+    reqs_dir.mkdir(parents=True, exist_ok=True)
+
+    payload: Dict[str, Any] = {
         "version": 1,
         "dut": module,
         "requirements": [],
     }
     enriched: List[Dict[str, object]] = []
-    for idx, requirement in enumerate(requirements, start=1):
-        req_info = classify_requirement(requirement)
-        prior = existing_meta.get(requirement, {})
-        req_info = merge_metadata(req_info, prior)
-        req_info["id"] = f"R{idx}"
-        enriched.append(req_info)
-        payload["requirements"].append(req_info)
-    REQS_PATH.write_text(yaml.dump(payload, sort_keys=False), encoding="utf-8")
+
+    for req in requirements:
+        entry: Dict[str, Any] = {
+            "id": req.rid,
+            "text": req.summary,
+            "tags": list(req.tags),
+            "priority": req.priority,
+            "acceptance": {"check": req.summary},
+        }
+
+        stimuli = build_stimuli_from_text(req)
+        if stimuli:
+            entry["stimuli"] = stimuli
+
+        if "reset" in req.tags:
+            entry.setdefault("cov_targets", {"line": 0.10, "toggle": 0.0})
+        elif "handshake" in req.tags or "latency" in req.tags:
+            entry.setdefault("cov_targets", {"line": 0.60, "toggle": 0.50})
+        elif "arithmetic" in req.tags:
+            entry.setdefault("cov_targets", {"line": 0.85, "toggle": 0.70})
+
+        prior = existing_meta.get(req.rid, {})
+        entry = merge_metadata(entry, prior)
+        enriched.append(entry)
+        payload["requirements"].append(entry)
+
+    reqs_path.write_text(yaml.dump(payload, sort_keys=False), encoding="utf-8")
     return enriched
 
 
-def write_plan(requirements: List[Dict[str, object]]) -> None:
+def write_plan(requirements: List[Dict[str, object]], plan_path: pathlib.Path) -> None:
     lines = ["# Test Plan", ""]
     for req in requirements:
         rid = req["id"]
         text = req["text"]
-        lines.append(f"- **{rid}**: {text}")
+        tags = ", ".join(req.get("tags", [])) or "n/a"
+        priority = req.get("priority", "n/a")
+        lines.append(f"- **{rid}** ({priority}; tags: {tags}): {text}")
         directed = req.get("stimuli", {}).get("directed", [])  # type: ignore[arg-type]
         if directed:
             lines.append(f"  - Directed stimulus: {json.dumps(directed)}")
@@ -230,7 +301,7 @@ def write_plan(requirements: List[Dict[str, object]]) -> None:
         else:
             lines.append("  - Random stimulus: TBD")
         lines.append("")
-    PLAN_PATH.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    plan_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
 def format_literal(value: Any, default: int) -> str:
@@ -244,7 +315,8 @@ def format_literal(value: Any, default: int) -> str:
 
 
 def build_property(req: Dict[str, object]) -> tuple[List[str], set[str]]:
-    rid = req["id"]
+    rid_display = req["id"]
+    rid_sanitized = _sv_ident(rid_display)
     text = req["text"].lower()
     tags = {tag.lower() for tag in req.get("tags", [])}
     mapping = req.get("map") if isinstance(req.get("map"), dict) else {}
@@ -252,12 +324,15 @@ def build_property(req: Dict[str, object]) -> tuple[List[str], set[str]]:
     body: List[str] = []
     libraries: set[str] = set()
 
+    def name(*parts: str) -> str:
+        return _sv_ident("_".join(str(part) for part in parts if part))
+
     if "reset" in tags:
         libraries.add(LIBRARY_BY_TAG["reset"])
         body.extend(
             [
-                f"`ASSERT_RESET_CLEARS(p_{rid}_rst_hold, clk, rst_n, y);",
-                f"`ASSERT_RESET_RELEASE(p_{rid}_rst_release, clk, rst_n, y);",
+                f"`ASSERT_RESET_CLEARS({name('p', rid_sanitized, 'rst_hold')}, clk, rst_n, y);",
+                f"`ASSERT_RESET_RELEASE({name('p', rid_sanitized, 'rst_release')}, clk, rst_n, y);",
             ]
         )
 
@@ -272,18 +347,18 @@ def build_property(req: Dict[str, object]) -> tuple[List[str], set[str]]:
             min_default_for_max = 1
         max_literal = format_literal(params.get("max"), min_default_for_max)
         body.append(
-            f"`SVA_REQ_ACK(p_{rid}_req_ack, {req_expr}, {ack_expr}, {min_literal}, {max_literal});"
+            f"`SVA_REQ_ACK({name('p', rid_sanitized, 'req_ack')}, {req_expr}, {ack_expr}, {min_literal}, {max_literal});"
         )
 
     if "onehot" in tags:
         libraries.add(LIBRARY_BY_TAG["onehot"])
         signal_expr = map_entry_expr(mapping.get("signal"), "ctrl_state")
-        body.append(f"`SVA_ONEHOT(p_{rid}_onehot, {signal_expr});")
+        body.append(f"`SVA_ONEHOT({name('p', rid_sanitized, 'onehot')}, {signal_expr});")
 
     if "gray" in tags:
         libraries.add(LIBRARY_BY_TAG["gray"])
         signal_expr = map_entry_expr(mapping.get("signal"), "gray_state")
-        body.append(f"`SVA_GRAY(p_{rid}_gray, {signal_expr});")
+        body.append(f"`SVA_GRAY({name('p', rid_sanitized, 'gray')}, {signal_expr});")
 
     if "latency" in tags:
         libraries.add(LIBRARY_BY_TAG["latency"])
@@ -296,37 +371,41 @@ def build_property(req: Dict[str, object]) -> tuple[List[str], set[str]]:
             min_default_for_max = 1
         max_literal = format_literal(params.get("max"), min_default_for_max)
         body.append(
-            f"`SVA_LATENCY(p_{rid}_latency, {trig_expr}, {cond_expr}, {min_literal}, {max_literal});"
+            f"`SVA_LATENCY({name('p', rid_sanitized, 'latency')}, {trig_expr}, {cond_expr}, {min_literal}, {max_literal});"
         )
 
-    if any(word in text for word in ("sum", "add", "plus")):
+    if any(word in text for word in ("sum", "add", "plus")) or "arithmetic" in tags:
+        prop_name = name('p', rid_sanitized)
+        assert_label = name('a', rid_sanitized)
         body.extend(
             [
-                f"property p_{rid};",
+                f"property {prop_name};",
                 "  @(posedge clk) disable iff (!rst_n)",
                 "    y == a + b;",
                 "endproperty",
-                f"a_{rid}: assert property (p_{rid}) else $error(\"[{rid}] y != a + b\");",
+                f"{assert_label}: assert property ({prop_name}) else $error(\"[{rid_display}] y != a + b\");",
             ]
         )
 
     if not body:
+        prop_name = name('p', rid_sanitized)
+        assert_label = name('a', rid_sanitized)
         body.extend(
             [
-                f"property p_{rid};",
+                f"property {prop_name};",
                 "  @(posedge clk) disable iff (!rst_n)",
                 "    1'b1 |-> 1'b1;",
                 "endproperty",
-                f"// TODO: refine assertion for {rid}",
-                f"a_{rid}: assert property (p_{rid});",
+                f"// TODO: refine assertion for {rid_display}",
+                f"{assert_label}: assert property ({prop_name});",
             ]
         )
 
     return body, libraries
 
 
-def write_svas(requirements: List[Dict[str, object]]) -> None:
-    include_files: set[str] = set()
+def write_svas(requirements: List[Dict[str, object]], svas_path: pathlib.Path) -> None:
+    include_files: set[str] = {"lib/base.svh"}
     payload: List[tuple[Dict[str, object], List[str]]] = []
 
     for req in requirements:
@@ -378,23 +457,45 @@ def write_svas(requirements: List[Dict[str, object]]) -> None:
     lines.append("endmodule")
     lines.append("/* verilator lint_on DECLFILENAME */")
     lines.append("`default_nettype wire")
-    SVAS_PATH.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    svas_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate verification artifacts from a spec")
+    parser.add_argument("--spec", type=pathlib.Path, default=pathlib.Path("docs/spec.md"))
+    parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("verification"))
+    parser.add_argument("--svas", type=pathlib.Path)
+    parser.add_argument("--plan", type=pathlib.Path)
+    parser.add_argument("--reqs", type=pathlib.Path)
+    args = parser.parse_args()
+
+    out_dir = args.out
+    if args.svas is None:
+        args.svas = out_dir / "svas.sv"
+    if args.plan is None:
+        args.plan = out_dir / "test_plan.md"
+    if args.reqs is None:
+        args.reqs = out_dir / "reqs.yml"
+
+    return args
 
 
 def main() -> None:
-    if not SPEC_PATH.exists():
-        raise SystemExit(f"Spec file {SPEC_PATH} not found")
-    text = SPEC_PATH.read_text(encoding="utf-8")
+    args = parse_args()
+    spec_path: pathlib.Path = args.spec
+    if not spec_path.exists():
+        raise SystemExit(f"Spec file {spec_path} not found")
+    text = spec_path.read_text(encoding="utf-8")
     module = parse_module_name(text)
-    raw_requirements = extract_requirements(text)
-    existing_meta = load_existing_metadata()
-    enriched_requirements = write_reqs(module, raw_requirements, existing_meta)
-    write_plan(enriched_requirements)
-    write_svas(enriched_requirements)
+    requirements = extract_requirements(text)
+    existing_meta = load_existing_metadata(args.reqs)
+    enriched_requirements = write_reqs(module, requirements, existing_meta, args.reqs)
+    write_plan(enriched_requirements, args.plan)
+    write_svas(enriched_requirements, args.svas)
     print("Generated:")
-    print(f"  {REQS_PATH}")
-    print(f"  {PLAN_PATH}")
-    print(f"  {SVAS_PATH}")
+    print(f"  {args.reqs}")
+    print(f"  {args.plan}")
+    print(f"  {args.svas}")
 
 
 if __name__ == "__main__":

@@ -1,65 +1,45 @@
 version: 1
 dut: top
 requirements:
-- text: shall register the sum of `a + b` into `y` on each rising edge of `clk`.
-  tags:
-  - arithmetic
-  - functional
-  acceptance:
-    check: y equals a + b (modulo width)
-  cov_targets:
-    line: 0.85
-    toggle: 0.7
-  stimuli:
-    directed:
-    - a: 0
-      b: 0
-    - a: 255
-      b: 1
-    - a: 170
-      b: 85
-    random:
-      count: 64
-      constraints:
-        a:
-        - 0
-        - 255
-        b:
-        - 0
-        - 255
-  id: R1
-- text: shall drive `y` to zero when `rst_n` is asserted low.
+- id: R-RESET-001
+  text: All observable outputs shall drive zero while `rst_n` is asserted low and
+    for one clock after deassertion.
   tags:
   - reset
+  priority: must
   acceptance:
-    check: y == 0 during and immediately after synchronous active-low reset
-  cov_targets:
-    line: 0.05
-    toggle: 0.0
+    check: All observable outputs shall drive zero while `rst_n` is asserted low and
+      for one clock after deassertion.
   stimuli:
     directed:
-    - sequence: rst_n low for 2 cycles, release, observe y
-  id: R2
-- text: must treat additions modulo 256 (wrap on overflow).
+    - sequence: drive rst_n low for 2 cycles, release, observe outputs
+  cov_targets:
+    line: 0.1
+    toggle: 0.0
+- id: R-FUNC-010
+  text: On every rising edge of `clk` with `rst_n` high, the design shall register
+    `y = a + b`.
   tags:
   - arithmetic
   - functional
-  - overflow
+  priority: must
   acceptance:
-    check: y equals a + b (modulo width)
+    check: On every rising edge of `clk` with `rst_n` high, the design shall register
+      `y = a + b`.
   cov_targets:
     line: 0.85
     toggle: 0.7
+- id: R-OVERFLOW-020
+  text: The addition must behave modulo 256, wrapping on overflow.
+  tags:
+  - functional
+  - overflow
+  priority: must
+  acceptance:
+    check: The addition must behave modulo 256, wrapping on overflow.
   stimuli:
-    directed:
-    - a: 0
-      b: 0
-    - a: 255
-      b: 1
-    - a: 170
-      b: 85
     random:
-      count: 64
+      count: 128
       constraints:
         a:
         - 0
@@ -67,4 +47,10 @@ requirements:
         b:
         - 0
         - 255
-  id: R3
+    directed:
+    - a: 0
+      b: 0
+    - a: 255
+      b: 1
+    - a: 170
+      b: 85

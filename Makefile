@@ -1,200 +1,189 @@
 VERIBLE_BIN := $(PWD)/tools/verible/bin
 PATH := $(VERIBLE_BIN):$(PATH)
+SHELL := /bin/bash
+
+PYTHON ?= python3
+VERILATOR ?= verilator
+YOSYS_SV ?= ./tools/yosys-sv
+SBY ?= sby
+
 VERIBLE_FORMAT := $(VERIBLE_BIN)/verible-verilog-format
 VERIBLE_LINT := $(VERIBLE_BIN)/verible-verilog-lint
-PRE_COMMIT ?= pre-commit
+VERIBLE_RULES ?= .verible.rules
+VERIBLE_RULES_ARG := $(if $(wildcard $(VERIBLE_RULES)),--rules_config=$(VERIBLE_RULES))
 
-SEED ?= 1234
-LINE_COV_MIN ?= 0.80
-TOGGLE_COV_MIN ?= 0.70
-
-SCRIPTS_DIR := scripts
-SPEC := docs/spec.md
-DEV_LOOP := $(SCRIPTS_DIR)/dev_loop.sh
-REPORTS := reports
-SIM_LOG := $(REPORTS)/sim.log
-
-YOSYS_SV ?= ./tools/yosys-sv
-VERILATOR ?= verilator
-VERILATOR_TIMING ?= --timing
-VERILATOR_INCLUDES ?= -Itb -Iverification
-VERILATOR_LINT_FLAGS ?= -sv $(VERILATOR_TIMING) -Wall -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
-VERILATOR_BUILD_FLAGS ?= -sv $(VERILATOR_TIMING) -O3 -Wall -Wno-fatal -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
-COV_FLAGS ?= --coverage
 TOP_TB ?= top_tb
+
+# Deterministic default seed; override per run as needed.
+SEED ?= 12345
 SIM_ARGS := +seed=$(SEED)
-SIM_BIN := build/sim/obj_dir/V$(TOP_TB)
+FLAKE_RETRIES ?= 1
 
-AI_BIN ?= tools/ai/claude_run.sh
-AI_VERIFY_INPUTS := reports/sim_report.json reports/coverage_per_req.json
-AI_SYNTH_INPUTS := reports/synth_report.json
+# RTL source selection (support mutant overrides)
+RTL_FILES := $(abspath $(wildcard rtl/*.sv))
+ifneq ($(strip $(MUTANT_SOURCE)),)
+MUTANT_SOURCE_ABS := $(abspath $(MUTANT_SOURCE))
+RTL_FILES := $(filter-out $(MUTANT_SOURCE_ABS),$(RTL_FILES))
+endif
+ifneq ($(strip $(MUTANT_RTL)),)
+RTL_FILES += $(abspath $(MUTANT_RTL))
+endif
 
-SBY ?= $(if $(SBY_BIN),$(SBY_BIN),sby)
+TB_FILES := $(abspath $(filter-out tb/top_asserts.sv,$(wildcard tb/*.sv)))
+VERIF_SV := $(abspath $(wildcard verification/*.sv))
+SV_SOURCES := $(RTL_FILES) $(TB_FILES)
 
-RTL ?= $(wildcard rtl/*.sv)
-TB_ALL := $(wildcard tb/*.sv)
-TB := $(filter-out tb/top_asserts.sv,$(TB_ALL))
-VERIF_SV := $(wildcard verification/*.sv)
-SV_SOURCES = $(RTL) $(TB)
-SIM_SOURCES = $(SV_SOURCES)
-SV_FORMAT_SOURCES = $(RTL) $(TB_ALL) $(VERIF_SV)
+ifeq ($(origin REPORTS_DIR), undefined)
+  ifneq ($(strip $(MUTANT_OUT)),)
+    REPORTS_DIR := $(MUTANT_OUT)
+  else
+    REPORTS_DIR := reports
+  endif
+endif
+REPORTS_DIR := $(abspath $(REPORTS_DIR))
 
-.PHONY: all check format lint lint-verilator lint-verible sim run test judge report cov cov_summarize trace trace_md synth formal formal_all dashboards badge mutate env junit clean hooks flaky_check patch \
-	pre-commit spec2rtl spec2sva spec2tests generate dev ai-verify ai-synth
-all: lint check synth formal_all dashboards badge
+BUILD_DIR := build/sim
+SIM_BIN := $(BUILD_DIR)/obj_dir/V$(TOP_TB)
+SIM_LOG := $(REPORTS_DIR)/sim.log
+SIM_REPORT := $(REPORTS_DIR)/sim_report.json
+ENV_JSON := $(REPORTS_DIR)/env.json
+RUN_MANIFEST := $(REPORTS_DIR)/run_manifest.json
+COVERAGE_INFO := $(REPORTS_DIR)/coverage.info
+COVERAGE_JSON := $(REPORTS_DIR)/coverage.json
+COVERAGE_PER_REQ := $(REPORTS_DIR)/coverage_per_req.json
+JUDGE_JSON := $(REPORTS_DIR)/judge.json
+JUNIT_XML := $(REPORTS_DIR)/junit.xml
+SYNTH_REPORT := $(REPORTS_DIR)/synth_report.json
+FORMAL_DIR := $(REPORTS_DIR)/formal
+MUTATION_DIR := $(REPORTS_DIR)/mutation
 
-format:
-	@echo "== Verible format =="
-	$(VERIBLE_FORMAT) --inplace $(SV_FORMAT_SOURCES)
+VERILATOR_INCLUDES := -Itb -Iverification
+VERILATOR_LINT_FLAGS := -sv --timing -Wall -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
+VERILATOR_BUILD_FLAGS := -sv --timing -O3 -Wall -Wno-fatal -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
+COV_FLAGS ?= --coverage
 
-lint: lint-verilator lint-verible
+.PHONY: help quick all env spec lint sim_run coverage_collect coverage_json judge junit check report synth formal_core formal_soft smoke mutate dashboards mutant_report freeze clean distclean
 
-lint-verilator:
-	@echo "== Verilator lint =="
+help: ## Show common targets
+	@awk -F':.*##' '/^[a-zA-Z0-9_-]+:.*##/ {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort
+
+quick: env spec lint dashboards ## Spec→Tests/SVAs, lint, sim+coverage+judge + dashboards
+
+all: env spec lint report synth formal_core mutate dashboards ## Full verification + QoR flow
+
+env: ## Capture tool versions and host details
+	$(PYTHON) scripts/env_report.py --out $(ENV_JSON)
+
+spec: ## Lint spec and regenerate requirements, plan, and SVAs
+	$(PYTHON) scripts/spec_lint.py --spec docs/spec.md
+	$(PYTHON) scripts/spec2tests.py --spec docs/spec.md --out verification
+	$(PYTHON) scripts/spec2sva.py --spec docs/spec.md --out tb/top_asserts.sv
+
+lint: ## Run Verible and Verilator lint
+	$(VERIBLE_FORMAT) --inplace $(RTL_FILES) $(TB_FILES) $(VERIF_SV) || true
 	$(VERILATOR) --lint-only $(VERILATOR_LINT_FLAGS) $(SV_SOURCES)
+	$(VERIBLE_LINT) $(VERIBLE_RULES_ARG) $(RTL_FILES) $(TB_FILES)
 
-lint-verible:
-	@echo "== Verible lint =="
-	$(VERIBLE_LINT) $(SV_FORMAT_SOURCES)
-
-sim: $(SIM_BIN)
-
-run: test
-
-$(SIM_BIN): $(SIM_SOURCES) verification/svas.sv sim/main.cpp | build/sim
-	$(VERILATOR) $(VERILATOR_BUILD_FLAGS) $(COV_FLAGS) --cc --exe --build \
-	  --top-module $(TOP_TB) $(SIM_SOURCES) sim/main.cpp -Mdir build/sim/obj_dir
-
-synth: synth/out.json
-	@true
-
-synth/out.json: $(RTL) synth/synth.ys | synth_dir
-	@echo "== Yosys UHDM synth =="
-	$(YOSYS_SV) -s synth/synth.ys | tee synth/yosys.log
-	@python3 $(SCRIPTS_DIR)/yosys_to_json.py
-	@python3 -c "import json, sys; from pathlib import Path; data=json.loads(Path('reports/synth_report.json').read_text()); sys.exit(0 if not data.get('has_latch') else 1)" || (echo 'Latch detected in synthesis'; exit 1)
-
-build/sim:
+$(BUILD_DIR):
 	mkdir -p $@
 
-synth_dir:
-	mkdir -p synth
+$(SIM_BIN): $(SV_SOURCES) verification/svas.sv sim/main.cpp | $(BUILD_DIR)
+	$(VERILATOR) $(VERILATOR_BUILD_FLAGS) $(COV_FLAGS) --cc --exe --build --top-module $(TOP_TB) $(SV_SOURCES) sim/main.cpp -Mdir $(BUILD_DIR)/obj_dir
 
-$(REPORTS):
+$(REPORTS_DIR):
 	mkdir -p $@
 
-hooks:
-	$(PRE_COMMIT) install
+sim_run: $(SIM_BIN) | $(REPORTS_DIR) ## Run compiled simulation and convert to JSON
+	@echo "== Run simulation (seed $(SEED)) =="
+	@$(PYTHON) scripts/run_sim.py \
+		--sim-bin $(SIM_BIN) \
+		--sim-args "$(SIM_ARGS)" \
+		--log $(SIM_LOG) \
+		--reports $(REPORTS_DIR) \
+		--seed $(SEED) \
+		--manifest $(RUN_MANIFEST) \
+		--flaky-retries $(FLAKE_RETRIES)
+	@if [ -f $(BUILD_DIR)/obj_dir/coverage.dat ]; then cp $(BUILD_DIR)/obj_dir/coverage.dat $(REPORTS_DIR)/coverage.dat; fi
 
-pre-commit:
-	$(PRE_COMMIT) run --all-files
-
-spec2rtl: $(SPEC)
-	python3 $(SCRIPTS_DIR)/spec2rtl.py --spec $(SPEC)
-
-spec2sva: $(SPEC)
-	python3 $(SCRIPTS_DIR)/spec2sva.py --spec $(SPEC)
-
-spec2tests:
-	python3 $(SCRIPTS_DIR)/spec2tests.py
-
-generate: spec2rtl spec2sva spec2tests
-
-dev:
-	$(DEV_LOOP)
-
-test: sim | $(REPORTS)
-	@echo "== Run sim =="
-	@bash -lc 'start=$$(python3 -c "import time; print(time.time())"); \
-	  set -o pipefail; \
-	  $(SIM_BIN) $(SIM_ARGS) 2>&1 | tee $(SIM_LOG); \
-	  status=$${PIPESTATUS[0]}; \
-	  end=$$(python3 -c "import time; print(time.time())"); \
-	  duration=$$(python3 -c "print(float('$$end')-float('$$start'))"); \
-	  python3 $(SCRIPTS_DIR)/sim_to_json.py $(SIM_LOG) $$duration; \
-	  exit $$status'
-
-judge:
-	@-$(MAKE) test
-	@python3 $(SCRIPTS_DIR)/judge.py
-
-cov:
-	@if [ -f $(REPORTS)/coverage.dat ]; then \
-	  mkdir -p $(REPORTS)/cov_annotate; \
-	  verilator_coverage --annotate $(REPORTS)/cov_annotate --write-info $(REPORTS)/coverage.info $(REPORTS)/coverage.dat >/dev/null 2>&1 || true; \
-	  echo "Coverage summary -> $(REPORTS)/coverage.info"; \
+coverage_collect: | $(REPORTS_DIR) ## Generate lcov coverage report
+	@if [ -f $(REPORTS_DIR)/coverage.dat ]; then \
+		mkdir -p $(REPORTS_DIR)/cov_annotate; \
+		verilator_coverage --annotate $(REPORTS_DIR)/cov_annotate --write-info $(COVERAGE_INFO) $(REPORTS_DIR)/coverage.dat >/dev/null 2>&1 || true; \
+		echo "Coverage summary -> $(COVERAGE_INFO)"; \
 	else \
-	  echo "No coverage data found"; \
+		echo "No coverage data found"; \
 	fi
 
-cov_summarize:
-	@if [ ! -f $(REPORTS)/coverage.info ]; then $(MAKE) cov; fi
-	@python3 $(SCRIPTS_DIR)/coverage_to_json.py
-	@python3 $(SCRIPTS_DIR)/coverage_per_req.py
-
-report: | $(REPORTS)
-	@-$(MAKE) judge
-	@$(MAKE) cov_summarize
-	@status=$$(jq -r '.status' $(REPORTS)/sim_report.json); \
-	 echo "=== SIM REPORT ==="; cat $(REPORTS)/sim_report.json; \
-	 echo "=== JUDGE ==="; cat $(REPORTS)/judge.json; \
-	 if [ "$$status" != "pass" ]; then \
-	   python3 $(SCRIPTS_DIR)/wave_slice.py || true; \
-	   echo "Simulation failed"; \
-	   exit 1; \
-	 fi
-trace: cov_summarize
-	@python3 $(SCRIPTS_DIR)/trace_matrix.py
-
-trace_md: trace
-	@python3 $(SCRIPTS_DIR)/trace_to_md.py
-
-check: report cov_summarize
-	@LINE_COV_MIN=$(LINE_COV_MIN) TOGGLE_COV_MIN=$(TOGGLE_COV_MIN) python3 $(SCRIPTS_DIR)/check_gates.py
-
-clean:
-	rm -rf build synth/out.json $(REPORTS)
-
-flaky_check:
-	@if [ -f reports/sim_report.json ] && [ "$$(jq -r '.status' reports/sim_report.json)" != "pass" ]; then \
-	  sig1=$$(jq -r .signature reports/sim_report.json); \
-	  $(MAKE) report; \
-	  sig2=$$(jq -r .signature reports/sim_report.json); \
-	  if [ "$$sig1" != "$$sig2" ]; then echo "FLAKY (same SEED)"; exit 1; fi; \
+coverage_json: coverage_collect ## Convert coverage data to JSON
+	@if [ -f $(COVERAGE_INFO) ]; then \
+		$(PYTHON) scripts/coverage_to_json.py --in $(COVERAGE_INFO) --out $(COVERAGE_JSON); \
+	else \
+		echo "Skipping coverage_to_json (coverage.info missing)"; \
 	fi
+	$(PYTHON) scripts/coverage_per_req.py --reqs verification/reqs.yml --sim $(SIM_REPORT) --cov $(COVERAGE_JSON) --log $(SIM_LOG) --tb tb/top_tb.sv --out $(COVERAGE_PER_REQ)
 
-formal: | $(REPORTS)
-	@$(SBY) -f formal/top.sby | tee reports/formal.log
-	@grep -q "DONE (PASS" reports/formal.log || (echo "Formal failed"; exit 1)
+judge: ## Triage simulation outcomes
+	$(PYTHON) scripts/judge.py --reports $(REPORTS_DIR) --out $(JUDGE_JSON)
 
-formal_all: formal
-	@[ -f formal/top_protocol.sby ] && $(SBY) -f formal/top_protocol.sby | tee -a reports/formal.log || true
+junit: ## Emit JUnit XML for CI
+	$(PYTHON) scripts/sim_to_junit.py --in $(SIM_REPORT) --out $(JUNIT_XML)
 
-dashboards: | $(REPORTS)
-	@python3 $(SCRIPTS_DIR)/report_dashboard.py
+check: ## Enforce coverage and policy gates
+	$(PYTHON) scripts/check_gates.py --policies policies.yml --reports $(REPORTS_DIR) --reqs verification/reqs.yml --coverage $(COVERAGE_JSON) --per-req $(COVERAGE_PER_REQ)
 
-badge: | $(REPORTS)
-	@python3 $(SCRIPTS_DIR)/coverage_badge.py
+report: spec $(SIM_BIN) ## Simulation + coverage + judge
+	$(MAKE) sim_run
+	$(MAKE) coverage_json
+	$(PYTHON) scripts/judge.py --reports $(REPORTS_DIR) --out $(JUDGE_JSON)
+	$(PYTHON) scripts/sim_to_junit.py --in $(SIM_REPORT) --out $(JUNIT_XML)
+	$(PYTHON) scripts/check_gates.py --policies policies.yml --reports $(REPORTS_DIR) --reqs verification/reqs.yml --coverage $(COVERAGE_JSON) --per-req $(COVERAGE_PER_REQ)
 
-mutate: | $(REPORTS)
-	@python3 $(SCRIPTS_DIR)/mutate.py
-	@$(MAKE) -e RTL="rtl/top_mut.sv" report || true
-	@test $$(jq -r '.status' $(REPORTS)/sim_report.json) = "fail" \
-	  || (echo "Mutation survived (tests too weak)"; rm -f rtl/top_mut.sv; exit 1)
-	@rm -f rtl/top_mut.sv
-	@$(MAKE) report
+synth: ## Run UHDM-Yosys synthesis and enforce latch policy
+	@mkdir -p $(REPORTS_DIR)
+	@yosys_version="$$($(YOSYS_SV) -V | head -n1)"; \
+	if $(YOSYS_SV) -Q -p "help read_systemverilog" >/dev/null 2>&1; then \
+		echo "[synth] Using UHDM-enabled $(YOSYS_SV)"; \
+		$(YOSYS_SV) -p "plugin -i systemverilog" -s synth/synth.ys -l synth/yosys.log; \
+		echo '{"uhdm_used": true}' > $(REPORTS_DIR)/synth_caps.json; \
+		uhdm_flag=true; \
+	else \
+		echo "[synth] UHDM not available — using fallback read_verilog -sv"; \
+		$(YOSYS_SV) -Q -p "read_verilog -sv rtl/top.sv; hierarchy -top top; proc; opt; check; write_json synth/out.json" | tee synth/yosys.log; \
+		echo '{"uhdm_used": false}' > $(REPORTS_DIR)/synth_caps.json; \
+		uhdm_flag=false; \
+	fi; \
+	$(PYTHON) scripts/update_manifest.py --manifest $(RUN_MANIFEST) --yosys "$$yosys_version" --uhdm $$uhdm_flag; \
+	$(PYTHON) scripts/yosys_to_json.py --log synth/yosys.log --out $(SYNTH_REPORT) --policies policies.yml; \
+	$(PYTHON) scripts/check_gates.py --policies policies.yml --reports $(REPORTS_DIR) --stage synth
 
-env: | $(REPORTS)
-	@python3 $(SCRIPTS_DIR)/env_report.py | tee reports/env.json
+formal_core: ## Execute core SymbiYosys profiles
+	$(PYTHON) scripts/run_formal.py --profiles formal/profiles/core.yml --out $(FORMAL_DIR) --sby $(SBY)
 
-junit: report
-	@python3 $(SCRIPTS_DIR)/sim_to_junit.py
+formal_soft: ## Run formal but continue on failure (useful for ad-hoc testing)
+	@$(MAKE) --no-print-directory formal_core || echo "[formal] Soft mode: ignoring formal failure"
 
-patch: judge
-	@python3 $(SCRIPTS_DIR)/draft_patch.py
+mutant_report: ## Internal: run report with mutant overrides
+	@$(MAKE) REPORTS_DIR=$(MUTANT_OUT) report
 
-ai-verify: $(AI_VERIFY_INPUTS) memory/CLAUDE.verify.md
-	@$(AI_BIN) verify $(AI_VERIFY_INPUTS) || true
+mutate: ## Generate mutants and evaluate kill rate
+	$(PYTHON) scripts/mutate.py --rtl rtl --out mutants
+	$(PYTHON) scripts/run_mutants.py --mutants mutants --reports $(MUTATION_DIR) --make $(MAKE) --seed $(SEED) --cwd $(CURDIR)
 
-ai-synth: $(AI_SYNTH_INPUTS) memory/CLAUDE.synth.md
-	@$(AI_BIN) synth $(AI_SYNTH_INPUTS) || true
+dashboards: report ## Build dashboards and static site
+	$(PYTHON) scripts/report_dashboard.py --reports $(REPORTS_DIR) --reqs verification/reqs.yml --out $(REPORTS_DIR)
+	@if [ -f $(REPORTS_DIR)/coverage_badge.svg ]; then cp -f $(REPORTS_DIR)/coverage_badge.svg docs/coverage_badge.svg; fi
+
+freeze: ## Run smoke + synth and tag a template release
+	REPORTS_DIR=reports/_smoke SEED=1 $(MAKE) -e quick
+	$(MAKE) synth
+	git tag -f template-v1
+
+
+smoke: ## Quick local run with canned seed and smoke reports
+	REPORTS_DIR=reports/_smoke SEED=42 $(MAKE) -e quick
+
+clean: ## Remove generated reports and builds
+	rm -rf $(BUILD_DIR) reports reports/run_manifest.json synth/out.json synth/yosys.log mutants
+
+distclean: clean ## Remove formal artefacts and cached data
+	rm -rf formal/*/PASS formal/*/engine_* formal/*/status* formal/*/model $(FORMAL_DIR)

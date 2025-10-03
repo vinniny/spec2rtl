@@ -49,6 +49,10 @@ module top_tb;
     $display("[COV] %s sample a=%0d b=%0d", rid, ai, bi);
   endtask
 
+  localparam string RidReset = "R-RESET-001";
+  localparam string RidFunc = "R-FUNC-010";
+  localparam string RidOvfl = "R-OVERFLOW-020";
+
   task automatic check_sum(string rid, input logic [W-1:0] ai, input logic [W-1:0] bi);
     logic [W-1:0] exp;
     begin
@@ -64,7 +68,7 @@ module top_tb;
         $display("[%s] PASS a=%0d b=%0d y=%0d", rid, ai, bi, y);
       end
 
-      if (rid == "R1") begin
+      if (rid == RidFunc) begin
         cov.sample();
         $display("[COVBIN] %s a=%0d b=%0d", rid, ai, bi);
       end
@@ -80,24 +84,24 @@ module top_tb;
     rst_n = 1'b1;
     @(posedge clk);
     if (y !== '0) begin
-      $error("[R2] Reset failed: y=%0d", y);
+      $error("[%s] Reset failed: y=%0d", RidReset, y);
       $display("[META] TIME=%0t", $time);
     end else begin
-      cov_sample("R2", a, b);
-      $display("[R2] PASS y=%0d after reset", y);
+      cov_sample(RidReset, a, b);
+      $display("[%s] PASS y=%0d after reset", RidReset, y);
     end
 
-    // R1 directed checks
-    check_sum("R1", W'(0), W'(0));
-    check_sum("R1", W'(8'd1), W'(8'd2));
-    check_sum("R3", MaxVal, W'(1));
-    check_sum("R1", W'(8'hAA), W'(8'h55));
+    // Directed checks
+    check_sum(RidFunc, W'(0), W'(0));
+    check_sum(RidFunc, W'(8'd1), W'(8'd2));
+    check_sum(RidOvfl, MaxVal, W'(1));
+    check_sum(RidFunc, W'(8'hAA), W'(8'h55));
 
-    // R1 random burst
+    // Random burst
     repeat (32) begin
       logic [W-1:0] rand_a = W'($urandom());
       logic [W-1:0] rand_b = W'($urandom());
-      check_sum("R1", rand_a, rand_b);
+      check_sum(RidFunc, rand_a, rand_b);
     end
 
     $display("TB DONE");

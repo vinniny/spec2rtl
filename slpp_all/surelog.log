@@ -7,7 +7,7 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 VERSION: 1.84
 BUILT  : Sep 28 2025
-DATE   : 2025-09-29.10:51:48
+DATE   : 2025-10-03.10:54:13
 COMMAND: -sv rtl/top.sv -DYOSYS=1 -DSYNTHESIS=1
 
 [INF:CM0023] Creating log file "/home/vinniny/projects/spec2rtl/slpp_all/surelog.log".

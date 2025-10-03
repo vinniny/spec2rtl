@@ -1,5 +1,7 @@
 #include "Vtop_tb.h"
 #include "verilated.h"
+#include <cstdlib>
+#include <string>
 #ifdef VM_COVERAGE
 #include "verilated_cov.h"
 #endif
@@ -31,7 +33,11 @@ int main(int argc, char** argv) {
   tb.final();
 
 #ifdef VM_COVERAGE
-  VerilatedCov::write("reports/coverage.dat");
+  const char* reports_env = std::getenv("REPORTS_DIR");
+  const std::string cov_path = reports_env && reports_env[0] ?
+      (std::string(reports_env) + "/coverage.dat") :
+      std::string("reports/coverage.dat");
+  VerilatedCov::write(cov_path.c_str());
 #endif
   return context.gotFinish() ? 0 : 1;
 }

@@ -22,6 +22,6 @@
 
 ## Requirements
 
-- shall register the sum of `a + b` into `y` on each rising edge of `clk`.
-- shall drive `y` to zero when `rst_n` is asserted low.
-- must treat additions modulo 256 (wrap on overflow).
+- [R-RESET-001] (tags: reset; priority: must) All observable outputs shall drive zero while `rst_n` is asserted low and for one clock after deassertion.
+- [R-FUNC-010] (tags: functional, arithmetic; priority: must) On every rising edge of `clk` with `rst_n` high, the design shall register `y = a + b`.
+- [R-OVERFLOW-020] (tags: functional, overflow; priority: must) The addition must behave modulo 256, wrapping on overflow.

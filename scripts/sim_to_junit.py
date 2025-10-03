@@ -2,19 +2,25 @@
 """Convert simulation report JSON into a minimal JUnit XML file."""
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 from xml.sax.saxutils import escape
 
-SIM_REPORT = pathlib.Path("reports/sim_report.json")
-OUTPUT = pathlib.Path("reports/junit.xml")
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Convert simulation report to JUnit XML")
+    parser.add_argument("--in", dest="sim", type=pathlib.Path, default=pathlib.Path("reports/sim_report.json"))
+    parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("reports/junit.xml"))
+    return parser.parse_args()
 
 
 def main() -> None:
-    if not SIM_REPORT.exists():
-        raise SystemExit("reports/sim_report.json not found; run make report first")
+    args = parse_args()
+    if not args.sim.exists():
+        raise SystemExit(f"Simulation report not found: {args.sim}")
 
-    report = json.loads(SIM_REPORT.read_text(encoding="utf-8"))
+    report = json.loads(args.sim.read_text(encoding="utf-8"))
     pass_count = int(report.get("pass_count", 0))
     fail_count = int(report.get("fail_count", 0))
     failures = report.get("failures", []) or []
@@ -39,8 +45,9 @@ def main() -> None:
 
     lines.append("</testsuite>")
 
-    OUTPUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"{OUTPUT.as_posix()} written")
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"Wrote {args.out}")
 
 
 if __name__ == "__main__":

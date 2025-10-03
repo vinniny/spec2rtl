@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import re
+import subprocess
+from typing import Any, Dict
 
-REPORTS_DIR = pathlib.Path("reports")
-SIM_REPORT = REPORTS_DIR / "sim_report.json"
-JUDGE_REPORT = REPORTS_DIR / "judge.json"
 
-if not SIM_REPORT.exists():
-    raise SystemExit(f"Simulation report {SIM_REPORT} not found. Run `make report` first.")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Triage simulation results")
+    parser.add_argument("--reports", type=pathlib.Path, default=pathlib.Path("reports"))
+    parser.add_argument("--sim", type=pathlib.Path)
+    parser.add_argument("--out", type=pathlib.Path)
+    return parser.parse_args()
 
-sim_data = json.loads(SIM_REPORT.read_text(encoding="utf-8"))
+
+def load_sim_report(path: pathlib.Path) -> Dict[str, Any]:
+    if not path.exists():
+        raise SystemExit(f"Simulation report {path} not found. Run `make report` first.")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Simulation report {path} is not valid JSON: {exc}") from exc
 
 
 def _failure_text(failure: dict[str, object]) -> str:
@@ -25,7 +36,7 @@ def _failure_text(failure: dict[str, object]) -> str:
     return " ".join(str(field) for field in fields if field)
 
 
-def decide(data: dict) -> tuple[dict, str]:
+def decide(data: dict[str, Any]) -> tuple[dict[str, Any], str]:
     status = data.get("status")
     failures = data.get("failures", [])
 
@@ -47,7 +58,7 @@ def decide(data: dict) -> tuple[dict, str]:
         text = _failure_text(failure).lower()
         rid = failure.get("req")
 
-        if rid == "R2" or "reset" in text:
+        if isinstance(rid, str) and (rid.endswith("RESET-001") or "reset" in text):
             triage = "reset_path"
             break
 
@@ -83,7 +94,7 @@ def decide(data: dict) -> tuple[dict, str]:
         ):
             reg_comb_suspect = True
 
-        if rid == "R3" or "wrap" in text or "overflow" in text:
+        if isinstance(rid, str) and (rid.endswith("OVERFLOW-020") or "overflow" in text):
             overflow_hit = True
 
         if ("off" in text and "by" in text) or (
@@ -102,7 +113,7 @@ def decide(data: dict) -> tuple[dict, str]:
             triage = "arith_width"
 
     if triage == "reset_path":
-        decision = {"action": "fix_rtl", "reason": "Reset behaviour broken (R2 fails)"}
+        decision = {"action": "fix_rtl", "reason": "Reset behaviour broken"}
     elif triage == "handshake":
         decision = {"action": "fix_rtl", "reason": "Protocol handshake violations detected"}
     elif triage == "signedness":
@@ -123,6 +134,12 @@ def decide(data: dict) -> tuple[dict, str]:
 
 
 def main() -> None:
+    args = parse_args()
+    reports_dir = args.reports
+    sim_path = args.sim or (reports_dir / "sim_report.json")
+    out_path = args.out or (reports_dir / "judge.json")
+
+    sim_data = load_sim_report(sim_path)
     decision, triage = decide(sim_data)
 
     hints = {
@@ -143,8 +160,28 @@ def main() -> None:
         decision["hint"] = hints.get(triage, hints["generic"])
 
     decision["schema"] = 1
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    JUDGE_REPORT.write_text(json.dumps(decision, indent=2), encoding="utf-8")
+
+    if sim_data.get("status") != "pass" and sim_data.get("failures"):
+        first_failure = sim_data.get("failures", [{}])[0]
+        label = str(first_failure.get("req", "failure"))
+        wave_cmd = [
+            "python3",
+            "scripts/wave_slice.py",
+            "--reports",
+            str(reports_dir),
+            "--log",
+            str(reports_dir / "sim.log"),
+            "--label",
+            label,
+        ]
+        wave_run = subprocess.run(wave_cmd, capture_output=True, text=True)
+        if wave_run.returncode == 0:
+            note = wave_run.stdout.strip() or wave_run.stderr.strip()
+            if note:
+                decision.setdefault("artifacts", {})["wave_slice"] = note
+
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(decision, indent=2), encoding="utf-8")
     print(json.dumps(decision, indent=2))
 
 

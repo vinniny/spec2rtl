@@ -1,16 +1,24 @@
 repos:
-  - repo: https://github.com/chipsalliance/verible
-    rev: v0.0-4023-gc1271a00
-    hooks:
-      - id: verible-verilog-format
-        files: "\\.(sv|svh|v)$"
-        args: ["--inplace"]
-      - id: verible-verilog-lint
-        files: "\\.(sv|svh|v)$"
   - repo: local
     hooks:
-      - id: verilator-lint
-        name: verilator --lint-only
-        entry: bash -lc 'VERILATOR="${VERILATOR:-verilator}" "$VERILATOR" --lint-only --timing -Wall -sv "$@"'
+      - id: verible-format
+        name: Verible format/lint
+        entry: scripts/precommit_verible.sh
         language: system
-        files: "\\.(sv|svh|v)$"
+        files: "\\.(sv|svh)$"
+      - id: pyflakes
+        name: Pyflakes (scripts)
+        entry: python -m pyflakes
+        language: system
+        types: [python]
+        files: "^scripts/"
+      - id: spec-lint
+        name: Spec lint
+        entry: python3 scripts/spec_lint.py --spec docs/spec.md
+        language: system
+        pass_filenames: false
+      - id: forbid-reports
+        name: Forbid committing reports/build artifacts
+        entry: scripts/precommit_no_reports.sh
+        language: system
+        pass_filenames: false

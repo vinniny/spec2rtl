@@ -1,6 +1,24 @@
+# build & sim
 build/
 obj_dir/
+slpp_all/
+mutants/
+tb/top_asserts.sv
 *.vcd
+*.vvp
 synth/out.json
 synth/yosys.log
+
+# reports (CI artifacts only)
 reports/
+
+# formal internals
+formal/*/engine_*/
+formal/*/status*
+formal/*/model/
+formal/*/PASS
+formal/*/*.sqlite
+
+# python
+__pycache__/
+*.pyc
