@@ -53,36 +53,10 @@ jobs:
           sby --version
           "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" -V | head -n1
       - uses: actions/cache@v4
-          sudo apt-get update
-          sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-
-          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets --latest)
-          TAG=$(printf '%s\n' "$INFO" | jq -r '.tagName // .tag_name // empty')
-          ASSET=$(printf '%s\n' "$INFO" | jq -r '
-            .assets[]?.name // empty
-            | select(test("^oss-cad-suite-.*(linux|ubuntu).*(x64|x86_64).*(\\.tar\\.xz|\\.tgz)$"))
-            | select(contains("musl") | not)
-          ' | head -n1)
-          if [ -z "$ASSET" ]; then
-            echo "[install-eda] No matching OSS-CAD asset. Available:"
-            printf '%s\n' "$INFO" | jq -r '.assets[]?.name // empty'
-            exit 1
-          fi
-          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O "/tmp/$ASSET"
-
-          mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          case "$ASSET" in
-            *.tar.xz) tar -xJf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
-            *.tgz)    tar -xzf "/tmp/$ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1 ;;
-          esac
-
-          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> "$GITHUB_PATH"
-          echo "YOSYS_SV_BIN=$(command -v yosys || echo $GITHUB_WORKSPACE/oss-cad-suite/bin/yosys)" >> "$GITHUB_ENV"
-          echo "UHDM=0" >> "$GITHUB_ENV"
-
-          verilator --version
-          sby --version
-          "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" -V | head -n1
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
 
   full:
     runs-on: ubuntu-latest
