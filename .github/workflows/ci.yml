@@ -3,10 +3,6 @@ name: spec2rtl
 permissions:
   contents: read
 
-env:
-  OSS_CAD_SUITE_TAG: 2024-08-26
-  OSS_CAD_SUITE_PLATFORM: linux-x64
-
 on:
   push:
   pull_request:
@@ -19,40 +15,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install EDA
+      - name: Install EDA (Verilator + solvers + OSS-CAD)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          python3 -m pip install --upgrade "pip<25"
-          python3 -m pip install --user symbiyosys
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
-          OSS_TAG="${OSS_CAD_SUITE_TAG}"
-          OSS_PLATFORM="${OSS_CAD_SUITE_PLATFORM}"
-          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build "$OSS_TAG" --json assets)
-          OSS_ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E "^oss-cad-suite-${OSS_PLATFORM}.*\\.(tar\\.xz|tgz)$" | head -n1)
-          gh release download -R YosysHQ/oss-cad-suite-build "$OSS_TAG" -p "$OSS_ASSET" -O "/tmp/$OSS_ASSET"
+          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
+          TAG=$(printf '%s' "$INFO" | jq -r .tagName)
+          ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' \
+            | grep -E '^oss-cad-suite-linux-x64.*\\.(tar\\.xz|tgz)$' | head -n1)
+          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          tar xf "/tmp/$OSS_ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          sby --version
-          boolector --version || true
-          z3 --version || true
-      - name: Select non-UHDM Yosys for CI
-        run: |
-          set -euo pipefail
-          YOSYS_BIN=$(command -v yosys || true)
-          if [ -z "$YOSYS_BIN" ] && [ -x "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" ]; then
-            YOSYS_BIN="$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys"
-          fi
-          if [ -z "$YOSYS_BIN" ]; then
-            echo "yosys binary not found" >&2
-            exit 1
-          fi
-          echo "YOSYS_SV_BIN=$YOSYS_BIN" >> $GITHUB_ENV
+          tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+
+          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
+
+          YOSYS_SV_BIN=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
+          echo "YOSYS_SV_BIN=$YOSYS_SV_BIN" >> $GITHUB_ENV
           echo "UHDM=0" >> $GITHUB_ENV
+
+          verilator --version
+          sby --version
+          "$YOSYS_SV_BIN" -V | head -n1
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -97,40 +83,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install EDA
+      - name: Install EDA (Verilator + solvers + OSS-CAD)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          python3 -m pip install --upgrade "pip<25"
-          python3 -m pip install --user symbiyosys
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
-          OSS_TAG="${OSS_CAD_SUITE_TAG}"
-          OSS_PLATFORM="${OSS_CAD_SUITE_PLATFORM}"
-          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build "$OSS_TAG" --json assets)
-          OSS_ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E "^oss-cad-suite-${OSS_PLATFORM}.*\\.(tar\\.xz|tgz)$" | head -n1)
-          gh release download -R YosysHQ/oss-cad-suite-build "$OSS_TAG" -p "$OSS_ASSET" -O "/tmp/$OSS_ASSET"
+          INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
+          TAG=$(printf '%s' "$INFO" | jq -r .tagName)
+          ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' \
+            | grep -E '^oss-cad-suite-linux-x64.*\\.(tar\\.xz|tgz)$' | head -n1)
+          gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
-          tar xf "/tmp/$OSS_ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          sby --version
-          boolector --version || true
-          z3 --version || true
-      - name: Select non-UHDM Yosys for CI
-        run: |
-          set -euo pipefail
-          YOSYS_BIN=$(command -v yosys || true)
-          if [ -z "$YOSYS_BIN" ] && [ -x "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" ]; then
-            YOSYS_BIN="$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys"
-          fi
-          if [ -z "$YOSYS_BIN" ]; then
-            echo "yosys binary not found" >&2
-            exit 1
-          fi
-          echo "YOSYS_SV_BIN=$YOSYS_BIN" >> $GITHUB_ENV
+          tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
+
+          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
+
+          YOSYS_SV_BIN=$(command -v yosys || echo "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys")
+          echo "YOSYS_SV_BIN=$YOSYS_SV_BIN" >> $GITHUB_ENV
           echo "UHDM=0" >> $GITHUB_ENV
+
+          verilator --version
+          sby --version
+          "$YOSYS_SV_BIN" -V | head -n1
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip

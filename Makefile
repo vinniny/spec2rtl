@@ -171,7 +171,8 @@ synth: ## Run UHDM-Yosys synthesis and enforce latch policy
 	$(PYTHON) scripts/check_gates.py --policies $(POLICIES) --reports $(REPORTS_DIR) --stage synth
 
 formal_core: ## Execute core SymbiYosys profiles
-	$(PYTHON) scripts/run_formal.py --profiles formal/profiles/core.yml --out $(FORMAL_DIR) --sby $(SBY)
+	@echo "[formal] using $(SBY)"
+	$(PYTHON) scripts/run_formal.py --profiles formal/profiles/core.yml --out $(FORMAL_DIR) --sby $(SBY) --base $(abspath $(CURDIR))
 
 formal_soft: ## Run formal but continue on failure (useful for ad-hoc testing)
 	@$(MAKE) --no-print-directory formal_core || echo "[formal] Soft mode: ignoring formal failure"
