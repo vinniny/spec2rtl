@@ -7,6 +7,9 @@ VERILATOR ?= verilator
 YOSYS_SV ?= ./tools/yosys-sv
 SBY ?= sby
 
+POLICIES ?= policies.yml
+export POLICIES
+
 VERIBLE_FORMAT := $(VERIBLE_BIN)/verible-verilog-format
 VERIBLE_LINT := $(VERIBLE_BIN)/verible-verilog-lint
 VERIBLE_RULES ?= .verible.rules
@@ -62,7 +65,7 @@ SIM_MAIN := $(abspath sim/main.cpp)
 VERILATOR_INCLUDES := -Itb -Iverification
 VERILATOR_LINT_FLAGS := -sv --timing -Wall -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
 VERILATOR_BUILD_FLAGS := -sv --timing -O3 -Wall -Wno-fatal -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
-COV_FLAGS ?= --coverage
+COV_FLAGS ?= --coverage --coverage-toggle
 
 .PHONY: help quick all env spec lint sim_run coverage_collect coverage_json judge junit check report synth formal_core formal_soft smoke mutate dashboards mutant_report freeze clean distclean
 
@@ -133,32 +136,39 @@ junit: ## Emit JUnit XML for CI
 	$(PYTHON) scripts/sim_to_junit.py --in $(SIM_REPORT) --out $(JUNIT_XML)
 
 check: ## Enforce coverage and policy gates
-	$(PYTHON) scripts/check_gates.py --policies policies.yml --reports $(REPORTS_DIR) --reqs verification/reqs.yml --coverage $(COVERAGE_JSON) --per-req $(COVERAGE_PER_REQ)
+	$(PYTHON) scripts/check_gates.py --policies $(POLICIES) --reports $(REPORTS_DIR) --reqs verification/reqs.yml --coverage $(COVERAGE_JSON) --per-req $(COVERAGE_PER_REQ)
 
 report: spec $(SIM_BIN) ## Simulation + coverage + judge
 	$(MAKE) sim_run
 	$(MAKE) coverage_json
 	$(PYTHON) scripts/judge.py --reports $(REPORTS_DIR) --out $(JUDGE_JSON)
 	$(PYTHON) scripts/sim_to_junit.py --in $(SIM_REPORT) --out $(JUNIT_XML)
-	$(PYTHON) scripts/check_gates.py --policies policies.yml --reports $(REPORTS_DIR) --reqs verification/reqs.yml --coverage $(COVERAGE_JSON) --per-req $(COVERAGE_PER_REQ)
+	$(PYTHON) scripts/check_gates.py --policies $(POLICIES) --reports $(REPORTS_DIR) --reqs verification/reqs.yml --coverage $(COVERAGE_JSON) --per-req $(COVERAGE_PER_REQ)
 
 synth: ## Run UHDM-Yosys synthesis and enforce latch policy
 	@mkdir -p $(REPORTS_DIR)
-	@yosys_version="$$($(YOSYS_SV) -V | head -n1)"; \
-	if $(YOSYS_SV) -Q -p "help read_systemverilog" >/dev/null 2>&1; then \
-		echo "[synth] Using UHDM-enabled $(YOSYS_SV)"; \
-		$(YOSYS_SV) -p "plugin -i systemverilog" -s synth/synth.ys -l synth/yosys.log; \
-		echo '{"uhdm_used": true}' > $(REPORTS_DIR)/synth_caps.json; \
-		uhdm_flag=true; \
-	else \
-		echo "[synth] UHDM not available — using fallback read_verilog -sv"; \
-		$(YOSYS_SV) -Q -p "read_verilog -sv rtl/top.sv; hierarchy -top top; proc; opt; check; write_json synth/out.json" | tee synth/yosys.log; \
-		echo '{"uhdm_used": false}' > $(REPORTS_DIR)/synth_caps.json; \
-		uhdm_flag=false; \
+	@echo "[synth] yosys: $${YOSYS_SV_BIN:-yosys} (UHDM=$(UHDM))"
+	@uhdm_setting="$(strip $(UHDM))"; \
+	if [ -z "$$uhdm_setting" ]; then uhdm_setting=1; fi; \
+	case "$$uhdm_setting" in 0|false|FALSE) uhdm_allowed=0 ;; *) uhdm_allowed=1 ;; esac; \
+	yosys_version="$$($(YOSYS_SV) -V 2>/dev/null | head -n1)"; \
+	if [ -z "$$yosys_version" ]; then yosys_version="n/a"; fi; \
+	uhdm_probe=0; \
+	if [ $$uhdm_allowed -eq 1 ]; then \
+		if $(YOSYS_SV) -Q -p "help read_systemverilog" >/dev/null 2>&1; then uhdm_probe=1; fi; \
 	fi; \
-	$(PYTHON) scripts/update_manifest.py --manifest $(RUN_MANIFEST) --yosys "$$yosys_version" --uhdm $$uhdm_flag; \
-	$(PYTHON) scripts/yosys_to_json.py --log synth/yosys.log --out $(SYNTH_REPORT) --policies policies.yml; \
-	$(PYTHON) scripts/check_gates.py --policies policies.yml --reports $(REPORTS_DIR) --stage synth
+	uhdm_used=false; \
+	if $(YOSYS_SV) -s synth/synth.ys -l synth/yosys.log; then \
+		if [ $$uhdm_allowed -eq 1 ] && [ $$uhdm_probe -eq 1 ]; then uhdm_used=true; fi; \
+	else \
+		echo "[synth] UHDM flow unavailable; falling back to plain read_verilog -sv"; \
+		$(YOSYS_SV) -Q -p "read_verilog -sv rtl/top.sv; hierarchy -top top; proc; check; write_json synth/out.json" | tee synth/yosys.log; \
+		uhdm_used=false; \
+	fi; \
+	echo "{\"uhdm_used\": $$uhdm_used}" > $(REPORTS_DIR)/synth_caps.json; \
+	$(PYTHON) scripts/update_manifest.py --manifest $(RUN_MANIFEST) --yosys "$$yosys_version" --uhdm $$uhdm_used; \
+	$(PYTHON) scripts/yosys_to_json.py --log synth/yosys.log --out $(SYNTH_REPORT) --policies $(POLICIES); \
+	$(PYTHON) scripts/check_gates.py --policies $(POLICIES) --reports $(REPORTS_DIR) --stage synth
 
 formal_core: ## Execute core SymbiYosys profiles
 	$(PYTHON) scripts/run_formal.py --profiles formal/profiles/core.yml --out $(FORMAL_DIR) --sby $(SBY)
@@ -174,7 +184,7 @@ mutate: ## Generate mutants and evaluate kill rate
 	$(PYTHON) scripts/run_mutants.py --mutants mutants --reports $(MUTATION_DIR) --make $(MAKE) --seed $(SEED) --cwd $(CURDIR)
 
 dashboards: report ## Build dashboards and static site
-	$(PYTHON) scripts/report_dashboard.py --reports $(REPORTS_DIR) --reqs verification/reqs.yml --out $(REPORTS_DIR)
+	POLICIES=$(POLICIES) $(PYTHON) scripts/report_dashboard.py --reports $(REPORTS_DIR) --reqs verification/reqs.yml --out $(REPORTS_DIR)
 	@if [ -f $(REPORTS_DIR)/coverage_badge.svg ]; then cp -f $(REPORTS_DIR)/coverage_badge.svg docs/coverage_badge.svg; fi
 
 freeze: ## Run smoke + synth and tag a template release

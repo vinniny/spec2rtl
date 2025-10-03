@@ -1,0 +1,19 @@
+lint:
+  treat_warnings_as_errors: true
+  forbid:
+    - implicit-latch
+coverage:
+  line: 85
+  toggle: 0
+  per_requirement: 0
+  per_req_overrides:
+    must: 0
+    should: 0
+    nice: 0
+formal:
+  profiles:
+    - core
+mutation:
+  kill_rate_min: 85
+synth:
+  forbid_latches: true

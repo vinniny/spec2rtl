@@ -6,6 +6,7 @@ import argparse
 import datetime as _dt
 import html
 import json
+import os
 import pathlib
 from typing import Any, Dict, List, Tuple
 
@@ -274,6 +275,9 @@ th {{ background: #f0f0f0; }}
     return html_text
 
 
+POLICIES_PATH = pathlib.Path(os.environ.get("POLICIES", "policies.yml"))
+
+
 def _collect_gate_summary(
     reports_dir: pathlib.Path,
     coverage: Dict[str, Any],
@@ -283,10 +287,9 @@ def _collect_gate_summary(
 ) -> List[Dict[str, str]]:
     summary: List[Dict[str, str]] = []
 
-    policies_path = pathlib.Path("policies.yml")
-    if policies_path.exists():
+    if POLICIES_PATH.exists():
         try:
-            policies = yaml.safe_load(policies_path.read_text(encoding="utf-8")) or {}
+            policies = yaml.safe_load(POLICIES_PATH.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError:
             policies = {}
     else:

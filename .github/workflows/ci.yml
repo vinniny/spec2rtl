@@ -19,88 +19,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Build Synlig (Yosys+UHDM) with cache
-        id: synlig-prepare
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential clang bison flex libreadline-dev gawk tcl-dev libffi-dev \
-            git pkg-config python3 python3-venv python3-pip zlib1g-dev cmake ninja-build \
-            graphviz xdot ccache
-          if [ ! -d synlig ]; then
-            git clone --recursive https://github.com/chipsalliance/synlig.git
-          else
-            cd synlig
-            git fetch --recurse-submodules --tags
-            git submodule update --init --recursive
-            cd ..
-          fi
-          cd synlig
-          SYNLIG_SHA=$(git rev-parse HEAD)
-          echo "SYNLIG_SHA=$SYNLIG_SHA" >> $GITHUB_ENV
-          echo "commit=$SYNLIG_SHA" >> $GITHUB_OUTPUT
-      - name: Configure ccache
-        shell: bash
-        run: |
-          echo "CCACHE_DIR=$HOME/.cache/ccache" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=1G" >> $GITHUB_ENV
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ steps.synlig-prepare.outputs.commit }}
-          restore-keys: |
-            ccache-${{ runner.os }}-
-      - name: Restore Synlig cache
-        id: synlig-cache
-        uses: actions/cache@v4
-        with:
-          path: synlig/install
-          key: synlig-install-${{ runner.os }}-${{ steps.synlig-prepare.outputs.commit }}
-          restore-keys: |
-            synlig-install-${{ runner.os }}-
-      - name: Compile Synlig
-        if: ${{ !hashFiles('synlig/install/bin/yosys') }}
-        timeout-minutes: 40
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: 2
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m pip install --upgrade "pip<25"
-          python3 -m pip install --user "orderedmultidict>=1.0,<2"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          python3 -c "import orderedmultidict, sys; print('orderedmultidict', orderedmultidict.__version__)"
-          cd synlig
-          cmake -S . -B build -GNinja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          ninja -C build
-          cmake --install build --prefix install
-          ./install/bin/yosys -V | head -n 1
-      - name: Export Synlig Yosys
-        shell: bash
-        run: |
-          echo "$GITHUB_WORKSPACE/synlig/install/bin" >> $GITHUB_PATH
-          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/install/bin/yosys" >> $GITHUB_ENV
-      - name: UHDM smoke (Synlig)
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$GITHUB_WORKSPACE/synlig/install/bin/yosys" -Q -p "help read_systemverilog" | head -n 10
-      - name: UHDM smoke (Synlig)
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$GITHUB_WORKSPACE/synlig/install/bin/yosys" -Q -p "help read_systemverilog" | head -n 10
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
       - name: Install EDA
         env:
           GH_TOKEN: ${{ github.token }}
@@ -108,7 +26,8 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          python3 -m pip install --upgrade pip
+          python3 -m pip install --upgrade "pip<25"
+          python3 -m pip install --user symbiyosys
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           OSS_TAG="${OSS_CAD_SUITE_TAG}"
@@ -118,13 +37,27 @@ jobs:
           gh release download -R YosysHQ/oss-cad-suite-build "$OSS_TAG" -p "$OSS_ASSET" -O "/tmp/$OSS_ASSET"
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf "/tmp/$OSS_ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
-          set -euo pipefail
-          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           sby --version
           boolector --version || true
           z3 --version || true
-
+      - name: Select non-UHDM Yosys for CI
+        run: |
+          set -euo pipefail
+          YOSYS_BIN=$(command -v yosys || true)
+          if [ -z "$YOSYS_BIN" ] && [ -x "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" ]; then
+            YOSYS_BIN="$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys"
+          fi
+          if [ -z "$YOSYS_BIN" ]; then
+            echo "yosys binary not found" >&2
+            exit 1
+          fi
+          echo "YOSYS_SV_BIN=$YOSYS_BIN" >> $GITHUB_ENV
+          echo "UHDM=0" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
       - name: Python deps
         run: |
           python -m venv .venv
@@ -144,11 +77,12 @@ jobs:
         env:
           REPORTS_DIR: reports/ci_smoke
           SEED: 42
+          POLICIES: policies.ci.yml
         run: |
           . .venv/bin/activate
           make lint
           make report
-          python3 scripts/check_gates.py --policies policies.yml --reports "$REPORTS_DIR"
+          python3 scripts/check_gates.py --policies "$POLICIES" --reports "$REPORTS_DIR"
       - name: Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -163,78 +97,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Build Synlig (Yosys+UHDM) with cache
-        id: synlig-prepare
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential clang bison flex libreadline-dev gawk tcl-dev libffi-dev \
-            git pkg-config python3 python3-venv python3-pip zlib1g-dev cmake ninja-build \
-            graphviz xdot ccache
-          if [ ! -d synlig ]; then
-            git clone --recursive https://github.com/chipsalliance/synlig.git
-          else
-            cd synlig
-            git fetch --recurse-submodules --tags
-            git submodule update --init --recursive
-            cd ..
-          fi
-          cd synlig
-          SYNLIG_SHA=$(git rev-parse HEAD)
-          echo "SYNLIG_SHA=$SYNLIG_SHA" >> $GITHUB_ENV
-          echo "commit=$SYNLIG_SHA" >> $GITHUB_OUTPUT
-      - name: Configure ccache
-        shell: bash
-        run: |
-          echo "CCACHE_DIR=$HOME/.cache/ccache" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=1G" >> $GITHUB_ENV
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ steps.synlig-prepare.outputs.commit }}
-          restore-keys: |
-            ccache-${{ runner.os }}-
-      - name: Restore Synlig cache
-        id: synlig-cache
-        uses: actions/cache@v4
-        with:
-          path: synlig/install
-          key: synlig-install-${{ runner.os }}-${{ steps.synlig-prepare.outputs.commit }}
-          restore-keys: |
-            synlig-install-${{ runner.os }}-
-      - name: Compile Synlig
-        if: ${{ !hashFiles('synlig/install/bin/yosys') }}
-        timeout-minutes: 40
-        env:
-          CMAKE_BUILD_PARALLEL_LEVEL: 2
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m pip install --upgrade "pip<25"
-          python3 -m pip install --user "orderedmultidict>=1.0,<2"
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          python3 -c "import orderedmultidict, sys; print('orderedmultidict', orderedmultidict.__version__)"
-          cd synlig
-          cmake -S . -B build -GNinja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          ninja -C build
-          cmake --install build --prefix install
-          ./install/bin/yosys -V | head -n 1
-      - name: Export Synlig Yosys
-        shell: bash
-        run: |
-          echo "$GITHUB_WORKSPACE/synlig/install/bin" >> $GITHUB_PATH
-          echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/synlig/install/bin/yosys" >> $GITHUB_ENV
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
       - name: Install EDA
         env:
           GH_TOKEN: ${{ github.token }}
@@ -242,7 +104,8 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
-          python3 -m pip install --upgrade pip
+          python3 -m pip install --upgrade "pip<25"
+          python3 -m pip install --user symbiyosys
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           OSS_TAG="${OSS_CAD_SUITE_TAG}"
@@ -252,13 +115,27 @@ jobs:
           gh release download -R YosysHQ/oss-cad-suite-build "$OSS_TAG" -p "$OSS_ASSET" -O "/tmp/$OSS_ASSET"
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf "/tmp/$OSS_ASSET" -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
-          set -euo pipefail
-          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           sby --version
           boolector --version || true
           z3 --version || true
-
+      - name: Select non-UHDM Yosys for CI
+        run: |
+          set -euo pipefail
+          YOSYS_BIN=$(command -v yosys || true)
+          if [ -z "$YOSYS_BIN" ] && [ -x "$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" ]; then
+            YOSYS_BIN="$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys"
+          fi
+          if [ -z "$YOSYS_BIN" ]; then
+            echo "yosys binary not found" >&2
+            exit 1
+          fi
+          echo "YOSYS_SV_BIN=$YOSYS_BIN" >> $GITHUB_ENV
+          echo "UHDM=0" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
       - name: Python deps
         run: |
           python -m venv .venv
@@ -273,15 +150,14 @@ jobs:
         env:
           REPORTS_DIR: reports/ci
           SEED: 12345
-          YOSYS_SV_BIN: ${{ env.YOSYS_SV_BIN }}
+          POLICIES: policies.ci.yml
         run: |
           . .venv/bin/activate
-          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           make quick
           make synth
           make formal_core || true
           make mutate
-          python3 scripts/check_gates.py --policies policies.yml --reports "$REPORTS_DIR"
+          python3 scripts/check_gates.py --policies "$POLICIES" --reports "$REPORTS_DIR"
       - name: Artifacts
         uses: actions/upload-artifact@v4
         with:

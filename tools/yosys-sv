@@ -26,6 +26,11 @@ if [[ -z "$pick" ]]; then
   exit 127
 fi
 
+uhdm_flag="${UHDM:-1}"
+if [[ "$uhdm_flag" == "0" || "$uhdm_flag" == "false" || "$uhdm_flag" == "FALSE" ]]; then
+  exec "$pick" "$@"
+fi
+
 root="$(dirname "$(dirname "$pick")")"
 mod1="$root/share/yosys/plugins/systemverilog.so"
 mod2="$root/lib/yosys/plugins/systemverilog.so"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import platform
 import subprocess
@@ -36,12 +37,15 @@ def detect_yosys() -> Tuple[str, bool]:
     except Exception:
         version = "n/a"
 
+    uhdm_env = os.getenv("UHDM", "1").lower() not in {"0", "false"}
+    uhdm_probe = False
     try:
         subprocess.check_call([str(WRAPPER), "-Q", "-p", "help read_systemverilog"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        plugin = True
+        uhdm_probe = True
     except Exception:
-        plugin = False
-    return version, plugin
+        uhdm_probe = False
+
+    return version, bool(uhdm_env and uhdm_probe)
 
 
 def parse_args() -> argparse.Namespace:
