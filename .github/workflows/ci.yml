@@ -51,8 +51,17 @@ jobs:
             synlig/share
           key: synlig-${{ steps.synlig-prepare.outputs.commit }}
           restore-keys: synlig-
+      - name: Check Synlig binary
+        id: synlig-check
+        shell: bash
+        run: |
+          if [ -f synlig/bin/yosys ]; then
+            echo "needs_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+          fi
       - name: Compile Synlig
-        if: ${{ steps.synlig-cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.synlig-cache.outputs.cache-hit != 'true' || steps.synlig-check.outputs.needs_build == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -164,8 +173,17 @@ jobs:
             synlig/share
           key: synlig-${{ steps.synlig-prepare.outputs.commit }}
           restore-keys: synlig-
+      - name: Check Synlig binary
+        id: synlig-check
+        shell: bash
+        run: |
+          if [ -f synlig/bin/yosys ]; then
+            echo "needs_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+          fi
       - name: Compile Synlig
-        if: ${{ steps.synlig-cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.synlig-cache.outputs.cache-hit != 'true' || steps.synlig-check.outputs.needs_build == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
