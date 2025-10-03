@@ -65,7 +65,7 @@ SIM_MAIN := $(abspath sim/main.cpp)
 VERILATOR_INCLUDES := -Itb -Iverification
 VERILATOR_LINT_FLAGS := -sv --timing -Wall -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
 VERILATOR_BUILD_FLAGS := -sv --timing -O3 -Wall -Wno-fatal -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
-COV_FLAGS ?= --coverage --coverage-toggle
+COV_FLAGS ?= --coverage --coverage-line --coverage-toggle --coverage-assert
 
 .PHONY: help quick all env spec lint sim_run coverage_collect coverage_json judge junit check report synth formal_core formal_soft smoke mutate dashboards mutant_report freeze clean distclean
 
