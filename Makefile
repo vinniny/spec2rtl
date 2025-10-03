@@ -57,6 +57,8 @@ SYNTH_REPORT := $(REPORTS_DIR)/synth_report.json
 FORMAL_DIR := $(REPORTS_DIR)/formal
 MUTATION_DIR := $(REPORTS_DIR)/mutation
 
+SIM_MAIN := $(abspath sim/main.cpp)
+
 VERILATOR_INCLUDES := -Itb -Iverification
 VERILATOR_LINT_FLAGS := -sv --timing -Wall -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
 VERILATOR_BUILD_FLAGS := -sv --timing -O3 -Wall -Wno-fatal -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
@@ -87,8 +89,10 @@ lint: ## Run Verible and Verilator lint
 $(BUILD_DIR):
 	mkdir -p $@
 
-$(SIM_BIN): $(SV_SOURCES) verification/svas.sv sim/main.cpp | $(BUILD_DIR)
-	$(VERILATOR) $(VERILATOR_BUILD_FLAGS) $(COV_FLAGS) --cc --exe --build --top-module $(TOP_TB) $(SV_SOURCES) sim/main.cpp -Mdir $(BUILD_DIR)/obj_dir
+$(SIM_BIN): $(SV_SOURCES) verification/svas.sv $(SIM_MAIN) | $(BUILD_DIR)
+	@echo "[sim] SIM_MAIN=$(SIM_MAIN)"
+	@test -f "$(SIM_MAIN)" || { echo "missing sim main: $(SIM_MAIN)"; exit 1; }
+	$(VERILATOR) $(VERILATOR_BUILD_FLAGS) $(COV_FLAGS) --cc --exe --build --top-module $(TOP_TB) $(SV_SOURCES) $(SIM_MAIN) -Mdir $(BUILD_DIR)/obj_dir
 
 $(REPORTS_DIR):
 	mkdir -p $@
