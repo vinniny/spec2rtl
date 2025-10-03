@@ -12,6 +12,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
       - name: Install EDA
         env:
           GH_TOKEN: ${{ github.token }}
@@ -20,20 +25,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
           python3 -m pip install --upgrade pip
-          python3 -m pip install --user symbiyosys
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
           TAG=$(printf '%s' "$INFO" | jq -r .tagName)
           ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E '^oss-cad-suite-linux-x64.*\.(tar\.xz|tgz)$' | head -n1)
           gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
-          # (optional) prove UHDM is present from your OSS-CAD-Suite step
-          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 5
-
-          # sanity-check formal tool now resolves
+          set -euo pipefail
+          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           sby --version
           boolector --version || true
           z3 --version || true
@@ -44,18 +46,20 @@ jobs:
           . .venv/bin/activate
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      - name: UHDM smoke
+      - name: Env & spec
         run: |
-          set -euo pipefail
-          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 5
-      - name: Smoke flow
+          . .venv/bin/activate
+          make env
+          make spec
+      - name: Lint + report + gates
         env:
           REPORTS_DIR: reports/ci_smoke
           SEED: 42
         run: |
           . .venv/bin/activate
-          make smoke
-          python3 scripts/check_gates.py --policies policies.yml --reports reports/ci_smoke
+          make lint
+          make report
+          python3 scripts/check_gates.py --policies policies.yml --reports "$REPORTS_DIR"
       - name: Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -70,6 +74,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
       - name: Install EDA
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,20 +87,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y verilator jq python3-venv python3-pip gh boolector z3
           python3 -m pip install --upgrade pip
-          python3 -m pip install --user symbiyosys
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           INFO=$(gh release view -R YosysHQ/oss-cad-suite-build --json tagName,assets)
           TAG=$(printf '%s' "$INFO" | jq -r .tagName)
           ASSET=$(printf '%s' "$INFO" | jq -r '.assets[].name' | grep -E '^oss-cad-suite-linux-x64.*\.(tar\.xz|tgz)$' | head -n1)
           gh release download -R YosysHQ/oss-cad-suite-build "$TAG" -p "$ASSET" -O /tmp/$ASSET
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
-          echo "$GITHUB_WORKSPACE/oss-cad-suite/bin" >> $GITHUB_PATH
           echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
-          # (optional) prove UHDM is present from your OSS-CAD-Suite step
-          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 5
-
-          # sanity-check formal tool now resolves
+          set -euo pipefail
+          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           sby --version
           boolector --version || true
           z3 --version || true
@@ -102,21 +108,19 @@ jobs:
           . .venv/bin/activate
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      - name: UHDM smoke
-        run: |
-          set -euo pipefail
-          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 5
-      - name: Full flow
+      - name: UHDM synth + formal + mutate
         env:
           REPORTS_DIR: reports/ci
           SEED: 12345
+          YOSYS_SV_BIN: ${{ env.YOSYS_SV_BIN }}
         run: |
           . .venv/bin/activate
+          ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           make quick
-          make synth || true
+          make synth
           make formal_core || true
           make mutate
-          python3 scripts/check_gates.py --policies policies.yml --reports reports/ci
+          python3 scripts/check_gates.py --policies policies.yml --reports "$REPORTS_DIR"
       - name: Artifacts
         uses: actions/upload-artifact@v4
         with:
