@@ -38,11 +38,11 @@ Spec2Tests → Tests & SVAs → Simulation + Coverage → Judge → Synthesis �
    sudo apt install verilator gtkwave   # gtkwave optional but useful
 
    # SymbiYosys (pick one)
-   # OSS CAD Suite already bundles yosys + sby (recommended)
-   # OR install from Git:
-   pip install --upgrade "pip<25"
-   pip install git+https://github.com/YosysHQ/SymbiYosys.git
-   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # ensure 'sby' is on PATH for future shells
+      # OSS CAD Suite already bundles yosys + sby (recommended)
+      # SymbiYosys (ships inside OSS CAD Suite)
+      # curl -L https://github.com/YosysHQ/oss-cad-suite-build/releases/download/.../oss-cad-suite-....tar.xz \
+      #   | tar -xJ -C $HOME/oss-cad-suite --strip-components=1
+      # export PATH="$HOME/oss-cad-suite/bin:$PATH"
    ```
    For SystemVerilog synthesis use either:
    - **OSS CAD Suite** (recommended) – download a tagged bundle with UHDM-enabled Yosys; it also ships SymbiYosys (`sby`) so no separate package install is required.
