@@ -34,6 +34,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
           echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
+          export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
           set -euo pipefail
           ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           sby --version
@@ -96,6 +97,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/oss-cad-suite"
           tar xf /tmp/$ASSET -C "$GITHUB_WORKSPACE/oss-cad-suite" --strip-components=1
           echo "YOSYS_SV_BIN=$GITHUB_WORKSPACE/oss-cad-suite/bin/yosys" >> $GITHUB_ENV
+          export PATH="$GITHUB_WORKSPACE/oss-cad-suite/bin:$PATH"
           set -euo pipefail
           ./tools/yosys-sv -Q -p "help read_systemverilog" | head -n 3
           sby --version
