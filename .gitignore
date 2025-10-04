@@ -22,3 +22,6 @@ formal/*/*.sqlite
 # python
 __pycache__/
 *.pyc
+
+# Local dev caches
+.cache/
