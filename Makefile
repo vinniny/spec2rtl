@@ -60,12 +60,30 @@ SYNTH_REPORT := $(REPORTS_DIR)/synth_report.json
 FORMAL_DIR := $(REPORTS_DIR)/formal
 MUTATION_DIR := $(REPORTS_DIR)/mutation
 
-SIM_MAIN := $(abspath sim/main.cpp)
-
 VERILATOR_INCLUDES := -Itb -Iverification
 VERILATOR_LINT_FLAGS := -sv --timing -Wall -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
 VERILATOR_BUILD_FLAGS := -sv --timing -O3 -Wall -Wno-fatal -Wno-UNUSEDSIGNAL $(VERILATOR_INCLUDES)
-COV_FLAGS ?= --coverage --coverage-line --coverage-toggle --coverage-assert
+
+# Probe Verilator feature flags once
+VERILATOR_HELP := $(shell $(VERILATOR) --help 2>&1 || true)
+
+# Toggle coverage (some old builds may miss it)
+COV_TOGGLE_FLAG := $(if $(findstring --coverage-toggle,$(VERILATOR_HELP)),--coverage-toggle,)
+
+# Line coverage (explicit; safe if missing)
+COV_LINE_FLAG := $(if $(findstring --coverage-line,$(VERILATOR_HELP)),--coverage-line,)
+
+# Assertion/user coverage: Verilator 5.041 uses --coverage-user (not --coverage-assert)
+COV_ASSERT_FLAG := $(if $(findstring --coverage-assert,$(VERILATOR_HELP)),--coverage-assert,$(if $(findstring --coverage-user,$(VERILATOR_HELP)),--coverage-user,))
+
+# Compose coverage flags (always include base --coverage)
+COVERAGE_FLAGS := --coverage $(COV_LINE_FLAG) $(COV_TOGGLE_FLAG) $(COV_ASSERT_FLAG)
+
+# Absolute path to C++ harness to avoid obj_dir path issues
+SIM_MAIN := $(abspath sim/main.cpp)
+
+$(info [sim] Verilator $(shell $(VERILATOR) --version | head -n1))
+$(info [sim] COVERAGE_FLAGS=$(COVERAGE_FLAGS))
 
 .PHONY: help quick all env spec lint sim_run coverage_collect coverage_json judge junit check report synth formal_core formal_soft smoke mutate dashboards mutant_report freeze clean distclean
 
@@ -95,7 +113,10 @@ $(BUILD_DIR):
 $(SIM_BIN): $(SV_SOURCES) verification/svas.sv $(SIM_MAIN) | $(BUILD_DIR)
 	@echo "[sim] SIM_MAIN=$(SIM_MAIN)"
 	@test -f "$(SIM_MAIN)" || { echo "missing sim main: $(SIM_MAIN)"; exit 1; }
-	$(VERILATOR) $(VERILATOR_BUILD_FLAGS) $(COV_FLAGS) --cc --exe --build --top-module $(TOP_TB) $(SV_SOURCES) $(SIM_MAIN) -Mdir $(BUILD_DIR)/obj_dir
+	$(VERILATOR) $(VERILATOR_BUILD_FLAGS) $(COVERAGE_FLAGS) \
+		--cc --exe --build --top-module $(TOP_TB) \
+		$(SV_SOURCES) $(SIM_MAIN) \
+		-Mdir $(BUILD_DIR)/obj_dir
 
 $(REPORTS_DIR):
 	mkdir -p $@
