@@ -19,7 +19,8 @@ def compute_coverage(info_path: pathlib.Path) -> dict[str, float | int | None]:
     if not info_path.exists():
         raise SystemExit(f"coverage info not found: {info_path}")
 
-    text = info_path.read_text(encoding="utf-8", errors="ignore")WD
+    line_total = line_hit = branch_total = branch_hit = 0
+    text = info_path.read_text(encoding="utf-8", errors="ignore")
     fallback_branch_total = fallback_branch_hit = 0
 
     for line in text.splitlines():
